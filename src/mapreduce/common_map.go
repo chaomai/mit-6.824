@@ -1,7 +1,11 @@
 package mapreduce
 
 import (
+	"encoding/json"
 	"hash/fnv"
+	"io/ioutil"
+	"log"
+	"os"
 )
 
 func doMap(
@@ -53,6 +57,40 @@ func doMap(
 	//
 	// Your code here (Part I).
 	//
+
+	b, err := ioutil.ReadFile(inFile)
+	if err != nil {
+		log.Fatalf("read file[%v] error[%v]", inFile, err)
+		return
+	}
+
+	content := string(b)
+	kvs := mapF(inFile, content)
+
+	rJSONFiles := make(map[string]*json.Encoder)
+	rOutFiles := make(map[string]*os.File)
+
+	for _, kv := range kvs {
+		rIdx := ihash(kv.Key) % nReduce
+		rFile := reduceName(jobName, mapTask, rIdx)
+
+		if _, ok := rJSONFiles[rFile]; !ok {
+			if f, err := os.OpenFile(rFile, os.O_CREATE|os.O_WRONLY, 0644); err != nil {
+				log.Fatalf("open map output file[%s] error[%v]", rFile, err)
+			} else {
+				rOutFiles[rFile] = f
+				rJSONFiles[rFile] = json.NewEncoder(f)
+			}
+		}
+
+		if err := rJSONFiles[rFile].Encode(&kv); err != nil {
+			log.Fatalf("write[%v] as json to file[%v] error[%v]", kv, rFile, err)
+		}
+	}
+
+	for _, file := range rOutFiles {
+		file.Close()
+	}
 }
 
 func ihash(s string) int {

@@ -2,8 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"mapreduce"
 	"os"
+	"strconv"
+	"strings"
+	"unicode"
 )
 
 //
@@ -15,6 +19,33 @@ import (
 //
 func mapF(filename string, contents string) []mapreduce.KeyValue {
 	// Your code here (Part II).
+	f := func(c rune) bool {
+		return !unicode.IsLetter(c) && !unicode.IsNumber(c)
+	}
+
+	words := strings.FieldsFunc(contents, f)
+	counter := make(map[string]int)
+
+	for _, w := range words {
+		if _, ok := counter[w]; ok {
+			counter[w]++
+		} else {
+			counter[w] = 1
+		}
+	}
+
+	kvs := make([]mapreduce.KeyValue, 0)
+	for k, v := range counter {
+		kvs = append(kvs, mapreduce.KeyValue{k, strconv.FormatInt(int64(v), 10)})
+	}
+
+	// Another solution, but slower
+	// kvs := make([]mapreduce.KeyValue, 0)
+	// for _, w := range words {
+	// 	kvs = append(kvs, mapreduce.KeyValue{w, "1"})
+	// }
+
+	return kvs
 }
 
 //
@@ -24,6 +55,17 @@ func mapF(filename string, contents string) []mapreduce.KeyValue {
 //
 func reduceF(key string, values []string) string {
 	// Your code here (Part II).
+	counter := 0
+
+	for _, v := range values {
+		if i, err := strconv.Atoi(v); err != nil {
+			log.Fatalf("parse[%s] to int error[%v]", v, err)
+		} else {
+			counter += i
+		}
+	}
+
+	return strconv.FormatInt(int64(counter), 10)
 }
 
 // Can be run in 3 ways:
