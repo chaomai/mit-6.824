@@ -74,9 +74,8 @@ func doReduce(
 		}
 	}
 
-	mFile := mergeName(jobName, reduceTask)
-	if f, err := os.OpenFile(mFile, os.O_CREATE|os.O_WRONLY, 0644); err != nil {
-		log.Fatalf("open merge file[%s] error[%v]", mFile, err)
+	if f, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0644); err != nil {
+		log.Fatalf("open merge file[%s] error[%v]", outFile, err)
 	} else {
 		mJSONFile := json.NewEncoder(f)
 
