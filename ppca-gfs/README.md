@@ -91,5 +91,3 @@ go run stress/stress_node.go -center <center_addr> -eth <eth> -master <master_ad
 * `servers.txt`:
     * 第一行：Master 的名称
     * 后面的每一行：第 `i` 台Chunkserver的名称
-
-

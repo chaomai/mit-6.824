@@ -12,7 +12,6 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"io"
 	"io/ioutil"
-	//"math/rand"
 	"os"
 	"path"
 	"strconv"
@@ -118,7 +117,7 @@ func TestRPCGetChunkHandle(t *testing.T) {
 		t.Error(err)
 	}
 	if r1.Handle != r2.Handle {
-		t.Error("got different handle: %v and %v", r1.Handle, r2.Handle)
+		t.Errorf("got different handle: %v and %v\n", r1.Handle, r2.Handle)
 	}
 
 	err = m.RPCGetChunkHandle(gfs.GetChunkHandleArg{path, 2}, &r2)
@@ -576,7 +575,7 @@ func TestShutdownInAppend(t *testing.T) {
 	}
 
 	// restart
-	for i, _ := range cs {
+	for i := range cs {
 		if csAdd[i] == l.Locations[0] || csAdd[i] == l.Locations[1] {
 			ii := strconv.Itoa(i)
 			cs[i] = chunkserver.NewAndServe(csAdd[i], mAdd, path.Join(root, "cs"+ii))
@@ -749,7 +748,7 @@ func TestDiskError(t *testing.T) {
 	fmt.Println("###### Destory two chunkserver's diskes")
 	// destory two server's disk
 	log.Info(l.Locations[:2])
-	for i, _ := range cs {
+	for i := range cs {
 		if csAdd[i] == l.Locations[0] || csAdd[i] == l.Locations[1] {
 			ii := strconv.Itoa(i)
 			os.RemoveAll(path.Join(root, "cs"+ii))
