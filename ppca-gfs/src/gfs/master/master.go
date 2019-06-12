@@ -133,10 +133,14 @@ func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoR
 // RPCGetChunkHandle returns the chunk handle of (path, index).
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
-	return nil
+	ch, err := m.cm.GetChunk(args.Path, args.Index)
+	reply.Handle = ch
+	return err
 }
 
 // RPCList returns list of files under path.
 func (m *Master) RPCList(args gfs.ListArg, reply *gfs.ListReply) error {
-	return m.nm.List(args.Path, reply)
+	pathInfo, err := m.nm.List(args.Path)
+	reply.Files = pathInfo
+	return err
 }

@@ -149,7 +149,7 @@ func (nm *namespaceManager) Mkdir(p gfs.Path) error {
 	return nil
 }
 
-func (nm *namespaceManager) List(p gfs.Path, r *gfs.ListReply) error {
+func (nm *namespaceManager) List(p gfs.Path) (r []gfs.PathInfo, err error) {
 	type node struct {
 		name string
 		nsT  *nsTree
@@ -173,13 +173,14 @@ func (nm *namespaceManager) List(p gfs.Path, r *gfs.ListReply) error {
 				nodes = append(nodes, node{name, nsT})
 			}
 
-			r.Files = append(r.Files, gfs.PathInfo{Name: n.name, IsDir: n.nsT.isDir})
+			r = append(r, gfs.PathInfo{Name: n.name, IsDir: n.nsT.isDir})
 		}
 
 		if !n.nsT.isDir {
-			r.Files = append(r.Files, gfs.PathInfo{Name: n.name, IsDir: n.nsT.isDir, Length: n.nsT.length, Chunks: n.nsT.chunks})
+			r = append(r, gfs.PathInfo{Name: n.name, IsDir: n.nsT.isDir, Length: n.nsT.length, Chunks: n.nsT.chunks})
 		}
 	}
 
-	return nil
+	err = nil
+	return
 }
