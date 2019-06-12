@@ -5,7 +5,7 @@ import (
 )
 
 func TestDirAndFileName(t *testing.T) {
-	nm := &namespaceManager{}
+	var nm *namespaceManager
 
 	dir, file, err := nm.dirAndLeafName("/Users/chaomai/Documents/workspace/github/mit-6.824/a.txt")
 	t.Log(dir)

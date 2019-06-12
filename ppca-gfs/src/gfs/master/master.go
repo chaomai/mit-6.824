@@ -1,6 +1,7 @@
 package master
 
 import (
+	"errors"
 	"net"
 	"net/rpc"
 	"time"
@@ -21,6 +22,16 @@ type Master struct {
 	cm  *chunkManager
 	csm *chunkServerManager
 }
+
+var (
+	ErrDirectoryExists    = errors.New("directory exists")
+	ErrFileExists         = errors.New("file exists")
+	ErrFileNotExists      = errors.New("file doesn't exists")
+	ErrPathIsNotDirectory = errors.New("path isn't a directory")
+	ErrPathIsNotFile      = errors.New("path isn't a file")
+	ErrPathNotExists      = errors.New("path doesn't exist")
+	ErrNoChunks           = errors.New("no chunks")
+)
 
 // NewAndServe starts a master and returns the pointer to it.
 func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
@@ -133,9 +144,48 @@ func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoR
 // RPCGetChunkHandle returns the chunk handle of (path, index).
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
-	ch, err := m.cm.GetChunk(args.Path, args.Index)
-	reply.Handle = ch
-	return err
+	if err := m.nm.Create(args.Path); err == nil || err == ErrFileExists {
+		log.Infof("RPCGetChunkHandle, file[%s], err[%s]", args.Path, err)
+	} else {
+		return err
+	}
+
+	dirParts, leafName, err := m.nm.dirAndLeafName(args.Path)
+	if err != nil {
+		return err
+	}
+
+	parentNode, err := m.nm.lockParents(dirParts)
+	if err != nil {
+		return err
+	}
+
+	defer m.nm.unlockParents(dirParts)
+
+	parentNode.RLock()
+	defer parentNode.RUnlock()
+
+	fileNode, ok := parentNode.children[leafName]
+	if !ok {
+		log.Errorf("RPCGetChunkHandle, file[%s], err[%s]", args.Path, ErrFileNotExists)
+		return ErrFileNotExists
+	}
+
+	if fileNode.isDir {
+		log.Errorf("RPCGetChunkHandle, path[%s], err[%s]", args.Path, ErrPathIsNotFile)
+		return ErrPathIsNotFile
+	}
+
+	fileNode.Lock()
+	defer fileNode.Unlock()
+
+	if int64(args.Index) < fileNode.chunks {
+		ch, err := m.cm.GetChunk(args.Path, args.Index)
+		reply.Handle = ch
+		return err
+	} else {
+		fileNode.chunks++
+	}
 }
 
 // RPCList returns list of files under path.

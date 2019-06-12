@@ -5,6 +5,8 @@ import (
 	"gfs/util"
 	"sync"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 // chunkManager manges chunks
@@ -55,7 +57,16 @@ func (cm *chunkManager) GetReplicas(handle gfs.ChunkHandle) (*util.ArraySet, err
 
 // GetChunk returns the chunk handle for (path, index).
 func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.ChunkHandle, error) {
-	return 0, nil
+	cm.RLock()
+	defer cm.RUnlock()
+
+	if fInfo, ok := cm.file[path]; ok {
+		handles := fInfo.handles
+		return handles[index], nil
+	}
+
+	log.Errorf("GetChunk, file[%s], err[%s]", path, ErrNoChunks)
+	return 0, ErrNoChunks
 }
 
 // GetLeaseHolder returns the chunkserver that hold the lease of a chunk

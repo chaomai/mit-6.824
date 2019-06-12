@@ -2,7 +2,6 @@ package master
 
 import (
 	"errors"
-	"fmt"
 	"gfs"
 	"strings"
 	"sync"
@@ -57,15 +56,17 @@ func (nm *namespaceManager) lockParents(dirParts []string) (parentNode *nsTree, 
 
 	curNode := nm.root
 	for i, dir := range dirParts {
-		log.Infof("lockParents, lock dir[%s]", dir)
+		log.Infof("lockParents, lock node[%s]", dir)
 
 		if _, ok := curNode.children[dir]; !ok {
-			err = fmt.Errorf("lockParents, path[%s] doesn't exist", strings.Join(dirParts[0:i], "/"))
+			log.Errorf("lockParents, path[%s], err[%s]", strings.Join(dirParts[0:i], "/"), ErrPathNotExists)
+			err = ErrPathNotExists
 			return
 		}
 
 		if !curNode.children[dir].isDir {
-			err = fmt.Errorf("lockParents, path[%s] isn't a directory", strings.Join(dirParts[0:i], "/"))
+			log.Errorf("lockParents, path[%s], err[%s]", strings.Join(dirParts[0:i], "/"), ErrPathIsNotDirectory)
+			err = ErrPathIsNotDirectory
 			return
 		}
 
@@ -88,6 +89,7 @@ func (nm *namespaceManager) unlockParents(dirParts []string) {
 
 	l := len(parentPath)
 	for i := range parentPath {
+		log.Infof("unlockParents, unlock node[%s]", dirParts[l-i-1])
 		parentPath[l-i-1].RUnlock()
 	}
 }
@@ -110,7 +112,8 @@ func (nm *namespaceManager) Create(p gfs.Path) error {
 	defer parentNode.Unlock()
 
 	if _, ok := parentNode.children[leafName]; ok {
-		return fmt.Errorf("Create, file[%s] exists", p)
+		log.Errorf("Create, file[%s], err[%s]", p, ErrFileExists)
+		return ErrFileExists
 	}
 
 	fileNode := new(nsTree)
@@ -138,7 +141,8 @@ func (nm *namespaceManager) Mkdir(p gfs.Path) error {
 	defer parentNode.Unlock()
 
 	if _, ok := parentNode.children[leafName]; ok {
-		return fmt.Errorf("directory[%s] exists", p)
+		log.Errorf("Mkdir, directory[%s] err[%s]", p, ErrDirectoryExists)
+		return ErrDirectoryExists
 	}
 
 	fileNode := new(nsTree)
