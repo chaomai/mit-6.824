@@ -136,6 +136,7 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 	return nil
 }
 
+// RPCList returns list of files under path.
 func (m *Master) RPCList(args gfs.ListArg, reply *gfs.ListReply) error {
-	return nil
+	return m.nm.List(args.Path, reply)
 }
