@@ -65,8 +65,8 @@ func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.Chunk
 		return handles[index], nil
 	}
 
-	log.Errorf("GetChunk, file[%s], err[%s]", path, ErrNoChunks)
-	return 0, ErrNoChunks
+	log.Errorf("GetChunk, file[%s], err[%s]", path, errNoChunks)
+	return 0, errNoChunks
 }
 
 // GetLeaseHolder returns the chunkserver that hold the lease of a chunk
@@ -78,6 +78,21 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
 
 // ExtendLease extends the lease of chunk if the lease holder is primary.
 func (cm *chunkManager) ExtendLease(handle gfs.ChunkHandle, primary gfs.ServerAddress) error {
+	cm.RLock()
+	defer cm.RUnlock()
+
+	if _, ok := cm.chunk[handle]; !ok {
+		log.Errorf("ExtendLease, handle[%d], err[%s]", handle, errNoSuchHandle)
+		return errNoSuchHandle
+	}
+
+	info := cm.chunk[handle]
+
+	info.Lock()
+	defer info.Unlock()
+
+	info.expire = time.Now().Add(gfs.LeaseExpire)
+
 	return nil
 }
 

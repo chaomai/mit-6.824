@@ -2,13 +2,12 @@ package master
 
 import (
 	"errors"
+	"gfs"
 	"net"
 	"net/rpc"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-
-	"gfs"
 )
 
 // Master Server struct
@@ -24,13 +23,15 @@ type Master struct {
 }
 
 var (
-	ErrDirectoryExists    = errors.New("directory exists")
-	ErrFileExists         = errors.New("file exists")
-	ErrFileNotExists      = errors.New("file doesn't exists")
-	ErrPathIsNotDirectory = errors.New("path isn't a directory")
-	ErrPathIsNotFile      = errors.New("path isn't a file")
-	ErrPathNotExists      = errors.New("path doesn't exist")
-	ErrNoChunks           = errors.New("no chunks")
+	errDirectoryExists            = errors.New("directory exists")
+	errFileExists                 = errors.New("file exists")
+	errFileNotExists              = errors.New("file doesn't exists")
+	errPathIsNotDirectory         = errors.New("path isn't a directory")
+	errPathIsNotFile              = errors.New("path isn't a file")
+	errPathNotExists              = errors.New("path doesn't exist")
+	errNoChunks                   = errors.New("no chunks")
+	errNoEnoughServersForReplicas = errors.New("no enough servers for replicas")
+	errNoSuchHandle               = errors.New("no such handle")
 )
 
 // NewAndServe starts a master and returns the pointer to it.
@@ -112,6 +113,14 @@ func (m *Master) BackgroundActivity() error {
 // RPCHeartbeat is called by chunkserver to let the master know that a chunkserver is alive.
 // Lease extension request is included.
 func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) error {
+	m.csm.Heartbeat(args.Address)
+
+	for _, v := range args.LeaseExtensions {
+		if err := m.cm.ExtendLease(v, args.Address); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -144,7 +153,7 @@ func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoR
 // RPCGetChunkHandle returns the chunk handle of (path, index).
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
-	if err := m.nm.Create(args.Path); err == nil || err == ErrFileExists {
+	if err := m.nm.Create(args.Path); err == nil || err == errFileExists {
 		log.Infof("RPCGetChunkHandle, file[%s], err[%s]", args.Path, err)
 	} else {
 		return err
@@ -167,13 +176,13 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 	fileNode, ok := parentNode.children[leafName]
 	if !ok {
-		log.Errorf("RPCGetChunkHandle, file[%s], err[%s]", args.Path, ErrFileNotExists)
-		return ErrFileNotExists
+		log.Errorf("RPCGetChunkHandle, file[%s], err[%s]", args.Path, errFileNotExists)
+		return errFileNotExists
 	}
 
 	if fileNode.isDir {
-		log.Errorf("RPCGetChunkHandle, path[%s], err[%s]", args.Path, ErrPathIsNotFile)
-		return ErrPathIsNotFile
+		log.Errorf("RPCGetChunkHandle, path[%s], err[%s]", args.Path, errPathIsNotFile)
+		return errPathIsNotFile
 	}
 
 	fileNode.Lock()
@@ -181,11 +190,38 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 	if int64(args.Index) < fileNode.chunks {
 		ch, err := m.cm.GetChunk(args.Path, args.Index)
+
+		if err != nil {
+			log.Errorf("RPCGetChunkHandle, err[%s]", err)
+			return err
+		}
+
 		reply.Handle = ch
-		return err
-	} else {
-		fileNode.chunks++
+		return nil
 	}
+
+	fileNode.chunks++
+
+	servers, err := m.csm.ChooseServers(gfs.DefaultNumReplicas)
+	if err != nil {
+		log.Errorf("RPCGetChunkHandle, err[%s]", err)
+		return err
+	}
+
+	handle, err := m.cm.CreateChunk(args.Path, servers)
+	if err != nil {
+		log.Errorf("RPCGetChunkHandle, err[%s]", err)
+		return err
+	}
+
+	if err := m.csm.AddChunk(servers, handle); err != nil {
+		log.Errorf("RPCGetChunkHandle, err[%s]", err)
+		return err
+	}
+
+	reply.Handle = handle
+
+	return nil
 }
 
 // RPCList returns list of files under path.
