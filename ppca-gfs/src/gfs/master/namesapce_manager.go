@@ -112,7 +112,7 @@ func (nm *namespaceManager) Create(p gfs.Path) error {
 	defer parentNode.Unlock()
 
 	if _, ok := parentNode.children[leafName]; ok {
-		log.Errorf("Create, file[%s], err[%s]", p, errFileExists)
+		log.Infof("Create, file[%s], err[%s]", p, errFileExists)
 		return errFileExists
 	}
 

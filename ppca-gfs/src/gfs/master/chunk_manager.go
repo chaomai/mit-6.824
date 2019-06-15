@@ -97,6 +97,32 @@ func (cm *chunkManager) ExtendLease(handle gfs.ChunkHandle, primary gfs.ServerAd
 }
 
 // CreateChunk creates a new chunk for path.
-func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (gfs.ChunkHandle, error) {
+func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (handle gfs.ChunkHandle, err error) {
+	cm.Lock()
+	defer cm.Unlock()
+
+	handle = cm.numChunkHandle
+
+	rpcArgs := gfs.CreateChunkArg{Handle: handle}
+	rpcReply := new(gfs.CreateChunkReply)
+	cInfo := new(chunkInfo)
+	cInfo.path = path
+	for _, addr := range addrs {
+		err = util.Call(addr, "ChunkServer.RPCCreateChunk", rpcArgs, rpcReply)
+		if err != nil {
+			log.Errorf("CreateChunk, addr[%s], err[%s]", addr, err)
+			return
+		}
+
+		cInfo.location.Add(addr)
+	}
+
+	fInfo := new(fileInfo)
+	fInfo.handles = append(fInfo.handles, handle)
+
+	cm.numChunkHandle = handle + 1
+	cm.chunk[handle] = cInfo
+	cm.file[path] = fInfo
+
 	return 0, nil
 }

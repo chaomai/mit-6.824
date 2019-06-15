@@ -32,6 +32,7 @@ var (
 	errNoChunks                   = errors.New("no chunks")
 	errNoEnoughServersForReplicas = errors.New("no enough servers for replicas")
 	errNoSuchHandle               = errors.New("no such handle")
+	errDiscontinuousChunk         = errors.New("discontinuous chunk should not be created")
 )
 
 // NewAndServe starts a master and returns the pointer to it.
@@ -198,6 +199,9 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 		reply.Handle = ch
 		return nil
+	} else if int64(args.Index) > fileNode.chunks {
+		log.Errorf("RPCGetChunkHandle, err[%s]", errDiscontinuousChunk)
+		return errDiscontinuousChunk
 	}
 
 	fileNode.chunks++

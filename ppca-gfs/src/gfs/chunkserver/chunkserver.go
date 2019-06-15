@@ -1,15 +1,14 @@
 package chunkserver
 
 import (
+	"gfs"
+	"gfs/util"
 	"net"
 	"net/rpc"
 	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-
-	"gfs"
-	"gfs/util"
 )
 
 // ChunkServer struct
@@ -140,6 +139,7 @@ func (cs *ChunkServer) RPCForwardData(args gfs.ForwardDataArg, reply *gfs.Forwar
 
 // RPCCreateChunk is called by master to create a new chunk given the chunk handle.
 func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.CreateChunkReply) error {
+	log.Infof("RPCCreateChunk, addr[%s], args[%+v]", cs.address, args)
 	return nil
 }
 

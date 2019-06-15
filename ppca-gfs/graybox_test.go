@@ -7,9 +7,7 @@ import (
 	"gfs/master"
 	"gfs/util"
 	"reflect"
-
 	"fmt"
-	log "github.com/Sirupsen/logrus"
 	"io"
 	"io/ioutil"
 	"os"
@@ -19,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 var (
@@ -113,7 +113,6 @@ func TestRPCGetChunkHandle(t *testing.T) {
 		t.Error(err)
 	}
 
-	return
 	err = m.RPCGetChunkHandle(gfs.GetChunkHandleArg{path, 0}, &r2)
 	if err != nil {
 		t.Error(err)

@@ -35,6 +35,7 @@ func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress) {
 	if info, ok := csm.servers[addr]; !ok {
 		log.Infof("Heartbeat, server[%s] doesn't exist, adding", addr)
 		csm.servers[addr] = new(chunkServerInfo)
+		csm.servers[addr].chunks = make(map[gfs.ChunkHandle]bool)
 	} else {
 		info.lastHeartbeat = time.Now()
 	}
@@ -87,6 +88,8 @@ func (csm *chunkServerManager) ChooseServers(num int) (servers []gfs.ServerAddre
 				servers = append(servers, s)
 			}
 		}
+
+		idx++
 	}
 
 	return
