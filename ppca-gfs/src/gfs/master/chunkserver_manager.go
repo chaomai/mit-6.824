@@ -72,7 +72,7 @@ func (csm *chunkServerManager) ChooseServers(num int) (servers []gfs.ServerAddre
 
 	n := len(csm.servers)
 	if num > n {
-		err = errNoEnoughServersForReplicas
+		err = gfs.ErrNoEnoughServersForReplicas
 		return
 	}
 

@@ -1,7 +1,6 @@
 package master
 
 import (
-	"errors"
 	"gfs"
 	"net"
 	"net/rpc"
@@ -21,19 +20,6 @@ type Master struct {
 	cm  *chunkManager
 	csm *chunkServerManager
 }
-
-var (
-	errDirectoryExists            = errors.New("directory exists")
-	errFileExists                 = errors.New("file exists")
-	errFileNotExists              = errors.New("file doesn't exists")
-	errPathIsNotDirectory         = errors.New("path isn't a directory")
-	errPathIsNotFile              = errors.New("path isn't a file")
-	errPathNotExists              = errors.New("path doesn't exist")
-	errNoChunks                   = errors.New("no chunks")
-	errNoEnoughServersForReplicas = errors.New("no enough servers for replicas")
-	errNoSuchHandle               = errors.New("no such handle")
-	errDiscontinuousChunk         = errors.New("discontinuous chunk should not be created")
-)
 
 // NewAndServe starts a master and returns the pointer to it.
 func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
@@ -128,6 +114,18 @@ func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) 
 // RPCGetPrimaryAndSecondaries returns lease holder and secondaries of a chunk.
 // If no one holds the lease currently, grant one.
 func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesArg, reply *gfs.GetPrimaryAndSecondariesReply) error {
+	l, err := m.cm.GetLeaseHolder(args.Handle)
+
+	if err != nil {
+		log.Errorf("RPCGetPrimaryAndSecondaries, err[%s]", err)
+		return err
+	}
+
+	log.Infof("RPCGetPrimaryAndSecondaries, lease[%+v]", l)
+	reply.Primary = l.Primary
+	reply.Secondaries = l.Secondaries
+	reply.Expire = l.Expire
+
 	return nil
 }
 
@@ -154,7 +152,7 @@ func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoR
 // RPCGetChunkHandle returns the chunk handle of (path, index).
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
-	if err := m.nm.Create(args.Path); err == nil || err == errFileExists {
+	if err := m.nm.Create(args.Path); err == nil || err == gfs.ErrFileExists {
 		log.Infof("RPCGetChunkHandle, file[%s], err[%s]", args.Path, err)
 	} else {
 		return err
@@ -177,13 +175,13 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 	fileNode, ok := parentNode.children[leafName]
 	if !ok {
-		log.Errorf("RPCGetChunkHandle, file[%s], err[%s]", args.Path, errFileNotExists)
-		return errFileNotExists
+		log.Errorf("RPCGetChunkHandle, file[%s], err[%s]", args.Path, gfs.ErrFileNotExists)
+		return gfs.ErrFileNotExists
 	}
 
 	if fileNode.isDir {
-		log.Errorf("RPCGetChunkHandle, path[%s], err[%s]", args.Path, errPathIsNotFile)
-		return errPathIsNotFile
+		log.Errorf("RPCGetChunkHandle, path[%s], err[%s]", args.Path, gfs.ErrPathIsNotFile)
+		return gfs.ErrPathIsNotFile
 	}
 
 	fileNode.Lock()
@@ -200,8 +198,8 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 		reply.Handle = ch
 		return nil
 	} else if int64(args.Index) > fileNode.chunks {
-		log.Errorf("RPCGetChunkHandle, err[%s]", errDiscontinuousChunk)
-		return errDiscontinuousChunk
+		log.Errorf("RPCGetChunkHandle, err[%s]", gfs.ErrDiscontinuousChunk)
+		return gfs.ErrDiscontinuousChunk
 	}
 
 	fileNode.chunks++

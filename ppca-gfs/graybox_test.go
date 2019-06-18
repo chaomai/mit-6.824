@@ -133,6 +133,7 @@ func TestWriteChunk(t *testing.T) {
 	ch := make(chan error, N+2)
 	ch <- m.RPCCreateFile(gfs.CreateFileArg{p}, &gfs.CreateFileReply{})
 	ch <- m.RPCGetChunkHandle(gfs.GetChunkHandleArg{p, 0}, &r1)
+
 	for i := 0; i < N; i++ {
 		go func(x int) {
 			ch <- c.WriteChunk(r1.Handle, gfs.Offset(x*2), []byte(fmt.Sprintf("%2d", x)))
@@ -796,7 +797,7 @@ func TestMain(tm *testing.M) {
 	for i := 0; i < csNum; i++ {
 		ii := strconv.Itoa(i)
 		os.Mkdir(path.Join(root, "cs"+ii), 0755)
-		csAdd[i] = gfs.ServerAddress(fmt.Sprintf(":%v", 10000+i))
+		csAdd[i] = gfs.ServerAddress(fmt.Sprintf(":%v", 20000+i))
 		cs[i] = chunkserver.NewAndServe(csAdd[i], mAdd, path.Join(root, "cs"+ii))
 	}
 

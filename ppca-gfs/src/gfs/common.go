@@ -1,6 +1,9 @@
 package gfs
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 type Path string
 type ServerAddress string
@@ -44,6 +47,20 @@ const (
 	NotAvailableForCopy
 )
 
+var (
+	ErrDirectoryExists            = errors.New("directory exists")
+	ErrFileExists                 = errors.New("file exists")
+	ErrFileNotExists              = errors.New("file doesn't exists")
+	ErrPathIsNotDirectory         = errors.New("path isn't a directory")
+	ErrPathIsNotFile              = errors.New("path isn't a file")
+	ErrPathNotExists              = errors.New("path doesn't exist")
+	ErrNoChunks                   = errors.New("no chunks")
+	ErrNoEnoughServersForReplicas = errors.New("no enough servers for replicas")
+	ErrNoSuchHandle               = errors.New("no such handle")
+	ErrChunkExists                = errors.New("chunk exists")
+	ErrDiscontinuousChunk         = errors.New("discontinuous chunk should not be created")
+)
+
 // extended error type with error code
 type Error struct {
 	Code ErrorCode
@@ -56,7 +73,8 @@ func (e Error) Error() string {
 
 // system config
 const (
-	LeaseExpire        = 2 * time.Second //1 * time.Minute
+	LeaseExpire = 1 * time.Minute
+	// LeaseExpire        = 2 * time.Second //1 * time.Minute
 	HeartbeatInterval  = 100 * time.Millisecond
 	BackgroundInterval = 200 * time.Millisecond //
 	ServerTimeout      = 1 * time.Second        //

@@ -8,6 +8,7 @@ import (
 
 type PushDataAndForwardArg struct {
 	Handle    ChunkHandle
+	DataID    *DataBufferID
 	Data      []byte
 	ForwardTo []ServerAddress
 }

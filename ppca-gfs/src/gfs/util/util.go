@@ -33,7 +33,7 @@ func CallAll(dst []gfs.ServerAddress, rpcname string, args interface{}) error {
 		}(d)
 	}
 	errList := ""
-	for _ = range dst {
+	for range dst {
 		if err := <-ch; err != nil {
 			errList += err.Error() + ";"
 		}
@@ -41,9 +41,9 @@ func CallAll(dst []gfs.ServerAddress, rpcname string, args interface{}) error {
 
 	if errList == "" {
 		return nil
-	} else {
-		return fmt.Errorf(errList)
 	}
+
+	return fmt.Errorf(errList)
 }
 
 // Sample randomly chooses k elements from {0, 1, ..., n-1}.

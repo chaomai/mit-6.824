@@ -2,17 +2,22 @@ package client
 
 import (
 	"gfs"
+	"gfs/util"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 // Client struct is the GFS client-side driver
 type Client struct {
 	master gfs.ServerAddress
+	leases *chunkLease
 }
 
 // NewClient returns a new gfs client.
-func NewClient(master gfs.ServerAddress) *Client {
+func NewClient(m gfs.ServerAddress) *Client {
 	return &Client{
-		master: master,
+		master: m,
+		leases: newChunkLease(m),
 	}
 }
 
@@ -50,8 +55,17 @@ func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err erro
 
 // GetChunkHandle returns the chunk handle of (path, index).
 // If the chunk doesn't exist, master will create one.
-func (c *Client) GetChunkHandle(path gfs.Path, index gfs.ChunkIndex) (gfs.ChunkHandle, error) {
-	return 0, nil
+func (c *Client) GetChunkHandle(path gfs.Path, index gfs.ChunkIndex) (handle gfs.ChunkHandle, err error) {
+	rpcArgs := gfs.GetChunkHandleArg{Path: path, Index: index}
+	rpcReply := new(gfs.GetChunkHandleReply)
+	err = util.Call(c.master, "Master.RPCGetChunkHandle", rpcArgs, rpcReply)
+	if err != nil {
+		log.Errorf("GetChunkHandle, err[%s]", err)
+		return
+	}
+
+	handle = rpcReply.Handle
+	return
 }
 
 // ReadChunk reads data from the chunk at specific offset.
@@ -63,6 +77,26 @@ func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byt
 // WriteChunk writes data to the chunk at specific offset.
 // len(data)+offset should be within chunk size.
 func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) error {
+	lease, err := c.leases.getChunkLease(handle)
+	if err != nil {
+		log.Errorf("WriteChunk, err[%s]", err)
+		return err
+	}
+
+	rpcPDAFArgs := gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: lease.Secondaries}
+	rpcPDAFReply := new(gfs.PushDataAndForwardReply)
+	if err := util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply); err != nil {
+		log.Errorf("WriteChunk, err[%s]", err)
+		return err
+	}
+
+	rpcWArgs := gfs.WriteChunkArg{DataID: rpcPDAFReply.DataID, Offset: offset, Secondaries: lease.Secondaries}
+	rpcWReply := new(gfs.WriteChunkReply)
+	if err := util.Call(lease.Primary, "ChunkServer.RPCWriteChunk", rpcWArgs, rpcWReply); err != nil {
+		log.Errorf("WriteChunk, err[%s]", err)
+		return err
+	}
+
 	return nil
 }
 

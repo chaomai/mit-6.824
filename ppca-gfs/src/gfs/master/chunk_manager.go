@@ -25,16 +25,19 @@ type chunkInfo struct {
 	primary  gfs.ServerAddress // primary chunkserver
 	expire   time.Time         // lease expire time
 	path     gfs.Path
+	version  gfs.ChunkVersion
 }
 
 type fileInfo struct {
 	handles []gfs.ChunkHandle
 }
 
-type lease struct {
-	primary     gfs.ServerAddress
-	expire      time.Time
-	secondaries []gfs.ServerAddress
+// Lease info
+type Lease struct {
+	Primary     gfs.ServerAddress
+	Expire      time.Time
+	Secondaries []gfs.ServerAddress
+	Version     gfs.ChunkVersion
 }
 
 func newChunkManager() *chunkManager {
@@ -65,15 +68,61 @@ func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.Chunk
 		return handles[index], nil
 	}
 
-	log.Errorf("GetChunk, file[%s], err[%s]", path, errNoChunks)
-	return 0, errNoChunks
+	log.Errorf("GetChunk, file[%s], err[%s]", path, gfs.ErrNoChunks)
+	return 0, gfs.ErrNoChunks
 }
 
 // GetLeaseHolder returns the chunkserver that hold the lease of a chunk
 // (i.e. primary) and expire time of the lease. If no one has a lease,
 // grants one to a replica it chooses.
-func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (*lease, error) {
-	return nil, nil
+func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err error) {
+	cm.RLock()
+	defer cm.RUnlock()
+
+	if _, ok := cm.chunk[handle]; !ok {
+		err = gfs.ErrNoSuchHandle
+		log.Errorf("GetLeaseHolder, handle[%d], err[%s]", handle, err)
+		return
+	}
+
+	info := cm.chunk[handle]
+
+	info.Lock()
+	defer info.Unlock()
+
+	if info.expire.After(time.Now()) {
+		l = new(Lease)
+		l.Primary = info.primary
+		l.Expire = info.expire
+		l.Version = info.version
+
+		for _, v := range info.location.GetAll() {
+			addr := v.(gfs.ServerAddress)
+			if addr != l.Primary {
+				l.Secondaries = append(l.Secondaries, addr)
+			}
+		}
+
+		return
+	}
+
+	info.primary = info.location.RandomPick().(gfs.ServerAddress)
+	info.expire = time.Now().Add(gfs.LeaseExpire)
+	info.version++
+
+	l = new(Lease)
+	l.Primary = info.primary
+	l.Expire = info.expire
+	l.Version = info.version
+
+	for _, v := range info.location.GetAll() {
+		addr := v.(gfs.ServerAddress)
+		if addr != l.Primary {
+			l.Secondaries = append(l.Secondaries, addr)
+		}
+	}
+
+	return
 }
 
 // ExtendLease extends the lease of chunk if the lease holder is primary.
@@ -82,12 +131,11 @@ func (cm *chunkManager) ExtendLease(handle gfs.ChunkHandle, primary gfs.ServerAd
 	defer cm.RUnlock()
 
 	if _, ok := cm.chunk[handle]; !ok {
-		log.Errorf("ExtendLease, handle[%d], err[%s]", handle, errNoSuchHandle)
-		return errNoSuchHandle
+		log.Errorf("ExtendLease, handle[%d], err[%s]", handle, gfs.ErrNoSuchHandle)
+		return gfs.ErrNoSuchHandle
 	}
 
 	info := cm.chunk[handle]
-
 	info.Lock()
 	defer info.Unlock()
 

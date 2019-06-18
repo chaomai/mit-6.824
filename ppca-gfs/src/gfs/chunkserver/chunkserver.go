@@ -5,6 +5,9 @@ import (
 	"gfs/util"
 	"net"
 	"net/rpc"
+	"os"
+	"path"
+	"strconv"
 	"sync"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 
 // ChunkServer struct
 type ChunkServer struct {
+	sync.RWMutex
 	address    gfs.ServerAddress // chunkserver address
 	master     gfs.ServerAddress // master address
 	serverRoot string            // path to data storage
@@ -128,6 +132,30 @@ func (cs *ChunkServer) Shutdown() {
 // It saves client pushed data to memory buffer and forward to all other replicas.
 // Returns a DataID which represents the index in the memory buffer.
 func (cs *ChunkServer) RPCPushDataAndForward(args gfs.PushDataAndForwardArg, reply *gfs.PushDataAndForwardReply) error {
+	log.Infof("RPCPushDataAndForward, addr[%s], args[%+v]", cs.address, args)
+
+	dataID := args.DataID
+	if dataID == nil {
+		p := cs.dl.New(args.Handle)
+		dataID = &p
+	}
+
+	cs.dl.Set(*dataID, args.Data)
+
+	forwardTo := args.ForwardTo
+
+	if len(forwardTo) > 0 {
+		rpcArgs := gfs.PushDataAndForwardArg{Handle: args.Handle, DataID: dataID, Data: args.Data, ForwardTo: forwardTo[1:]}
+		rpcReply := new(gfs.PushDataAndForwardReply)
+		err := util.Call(forwardTo[0], "ChunkServer.RPCPushDataAndForward", rpcArgs, rpcReply)
+		if err != nil {
+			log.Errorf("RPCPushDataAndForward, err[%s]", err)
+			return err
+		}
+	}
+
+	reply.DataID = *dataID
+
 	return nil
 }
 
@@ -140,6 +168,29 @@ func (cs *ChunkServer) RPCForwardData(args gfs.ForwardDataArg, reply *gfs.Forwar
 // RPCCreateChunk is called by master to create a new chunk given the chunk handle.
 func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.CreateChunkReply) error {
 	log.Infof("RPCCreateChunk, addr[%s], args[%+v]", cs.address, args)
+	cs.Lock()
+	defer cs.Unlock()
+
+	if _, ok := cs.chunk[args.Handle]; ok {
+		log.Errorf("RPCCreateChunk, addr[%s], err[%s]", cs.address, gfs.ErrChunkExists)
+		return gfs.ErrChunkExists
+	}
+
+	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.Handle), 10))
+	fp, err := os.OpenFile(chunkPath, os.O_CREATE|os.O_WRONLY, 0644)
+
+	if err != nil {
+		log.Errorf("RPCCreateChunk, addr[%s], err[%+v]", cs.address, err)
+		return err
+	}
+
+	fp.Sync()
+	fp.Close()
+
+	log.Infof("RPCCreateChunk, addr[%s], create[%s]", cs.address, chunkPath)
+
+	cs.chunk[args.Handle] = new(chunkInfo)
+
 	return nil
 }
 
@@ -151,6 +202,8 @@ func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkR
 // RPCWriteChunk is called by client
 // applies chunk write to itself (primary) and asks secondaries to do the same.
 func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChunkReply) error {
+	log.Infof("RPCWriteChunk, addr[%s], args[%+v]", cs.address, args)
+
 	return nil
 }
 
@@ -162,17 +215,17 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 	return nil
 }
 
-// RPCApplyWriteChunk is called by primary to apply mutations
+// RPCApplyMutation is called by primary to apply mutations
 func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.ApplyMutationReply) error {
 	return nil
 }
 
-// RPCSendCCopy is called by master, send the whole copy to given address
+// RPCSendCopy is called by master, send the whole copy to given address
 func (cs *ChunkServer) RPCSendCopy(args gfs.SendCopyArg, reply *gfs.SendCopyReply) error {
 	return nil
 }
 
-// RPCSendCCopy is called by another replica
+// RPCApplyCopy is called by another replica
 // rewrite the local version to given copy data
 func (cs *ChunkServer) RPCApplyCopy(args gfs.ApplyCopyArg, reply *gfs.ApplyCopyReply) error {
 	return nil
