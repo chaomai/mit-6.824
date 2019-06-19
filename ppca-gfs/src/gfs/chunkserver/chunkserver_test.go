@@ -34,11 +34,11 @@ func TestWrite(t *testing.T) {
 	}
 	defer f.Close()
 
-	if _, err := f.Seek(20, 0); err != nil {
+	if _, err := f.Seek(3, 0); err != nil {
 		panic(err)
 	}
 
-	if _, err := f.WriteAt([]byte("ABC"), 15); err != nil {
+	if _, err := f.WriteAt([]byte("ABC"), 5); err != nil {
 		panic(err)
 	}
 

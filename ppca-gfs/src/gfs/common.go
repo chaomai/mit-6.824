@@ -38,14 +38,14 @@ const (
 
 type ErrorCode int
 
-const (
-	Success = iota
-	UnknownError
-	AppendExceedChunkSize
-	WriteExceedChunkSize
-	ReadEOF
-	NotAvailableForCopy
-)
+// const (
+// Success = iota
+// UnknownError
+// AppendExceedChunkSize
+// WriteExceedChunkSize
+// ReadEOF
+// NotAvailableForCopy
+// )
 
 var (
 	ErrDirectoryExists            = errors.New("directory exists")
@@ -59,6 +59,11 @@ var (
 	ErrNoSuchHandle               = errors.New("no such handle")
 	ErrChunkExists                = errors.New("chunk exists")
 	ErrDiscontinuousChunk         = errors.New("discontinuous chunk should not be created")
+	ErrAppendExceedChunkSize      = errors.New("append exceed chunk size")
+	ErrWriteExceedChunkSize       = errors.New("write exceed chunk size")
+	ErrReadEOF                    = errors.New("read eof")
+	ErrNoSuchDataID               = errors.New("no such data ID")
+	ErrWriteIncomplete            = errors.New("write incomplete")
 )
 
 // extended error type with error code
@@ -73,6 +78,7 @@ func (e Error) Error() string {
 
 // system config
 const (
+	// TODO for debug
 	LeaseExpire = 1 * time.Minute
 	// LeaseExpire        = 2 * time.Second //1 * time.Minute
 	HeartbeatInterval  = 100 * time.Millisecond
