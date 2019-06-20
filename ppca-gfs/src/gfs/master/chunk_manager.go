@@ -54,8 +54,22 @@ func (cm *chunkManager) RegisterReplica(handle gfs.ChunkHandle, addr gfs.ServerA
 }
 
 // GetReplicas returns the replicas of a chunk
-func (cm *chunkManager) GetReplicas(handle gfs.ChunkHandle) (*util.ArraySet, error) {
-	return nil, nil
+func (cm *chunkManager) GetReplicas(handle gfs.ChunkHandle) (loc *util.ArraySet, err error) {
+	cm.RLock()
+	defer cm.RUnlock()
+
+	if _, ok := cm.chunk[handle]; !ok {
+		err = gfs.ErrNoSuchHandle
+		log.Errorf("GetReplicas, handle[%d], err[%s]", handle, err)
+		return
+	}
+
+	info := cm.chunk[handle]
+	info.RLock()
+	defer info.RUnlock()
+	loc = &info.location
+
+	return
 }
 
 // GetChunk returns the chunk handle for (path, index).

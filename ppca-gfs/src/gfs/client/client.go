@@ -70,8 +70,49 @@ func (c *Client) GetChunkHandle(path gfs.Path, index gfs.ChunkIndex) (handle gfs
 
 // ReadChunk reads data from the chunk at specific offset.
 // len(data)+offset  should be within chunk size.
-func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) (int, error) {
-	return 0, nil
+func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) (n int, err error) {
+	rpcArgs := gfs.GetReplicasArg{Handle: handle}
+	rpcReply := new(gfs.GetReplicasReply)
+
+	err = util.Call(c.master, "Master.RPCGetReplicas", rpcArgs, rpcReply)
+	if err != nil {
+		log.Errorf("ReadChunk, err[%s]", err)
+		return
+	}
+
+	replicasLen := len(rpcReply.Locations)
+	if replicasLen == 0 {
+		err = gfs.ErrNoReplicas
+		log.Errorf("ReadChunk, err[%s]", err)
+		return
+	}
+
+	samples, err := util.Sample(len(rpcReply.Locations), 1)
+	idx := samples[0]
+	addr := rpcReply.Locations[idx]
+
+	rpcRCArgs := gfs.ReadChunkArg{Handle: handle, Offset: offset, Length: cap(data)}
+	rpcRCReply := new(gfs.ReadChunkReply)
+
+	err = util.Call(addr, "ChunkServer.RPCReadChunk", rpcRCArgs, rpcRCReply)
+	if err != nil {
+		log.Errorf("ReadChunk, err[%s]", err)
+		return
+	}
+
+	for i := range rpcRCReply.Data {
+		data[i] = rpcRCReply.Data[i]
+	}
+
+	n = rpcRCReply.Length
+
+	if n != len(data) {
+		err = gfs.ErrReadIncomplete
+		log.Errorf("ReadChunk, err[%s]", err)
+		return
+	}
+
+	return
 }
 
 // WriteChunk writes data to the chunk at specific offset.

@@ -131,6 +131,16 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 
 // RPCGetReplicas is called by client to find all chunkservers that hold the chunk.
 func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasReply) error {
+	loc, err := m.cm.GetReplicas(args.Handle)
+	if err != nil {
+		log.Errorf("RPCGetReplicas, err[%s]", err)
+		return err
+	}
+
+	for _, e := range loc.GetAll() {
+		addr := e.(gfs.ServerAddress)
+		reply.Locations = append(reply.Locations, addr)
+	}
 	return nil
 }
 

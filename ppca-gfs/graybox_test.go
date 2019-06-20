@@ -143,6 +143,7 @@ func TestWriteChunk(t *testing.T) {
 }
 
 func TestReadChunk(t *testing.T) {
+	TestWriteChunk(t)
 	var r1 gfs.GetChunkHandleReply
 	p := gfs.Path("/TestWriteChunk.txt")
 	ch := make(chan error, N+1)
@@ -196,6 +197,7 @@ func checkReplicas(handle gfs.ChunkHandle, length int, t *testing.T) int {
 }
 
 func TestReplicaEquality(t *testing.T) {
+	TestWriteChunk(t)
 	var r1 gfs.GetChunkHandleReply
 	var data [][]byte
 	p := gfs.Path("/TestWriteChunk.txt")

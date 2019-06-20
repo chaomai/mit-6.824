@@ -184,8 +184,7 @@ func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.Create
 		return err
 	}
 
-	fp.Sync()
-	fp.Close()
+	defer fp.Close()
 
 	log.Infof("RPCCreateChunk, addr[%s], create[%s]", cs.address, chunkPath)
 
@@ -196,6 +195,48 @@ func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.Create
 
 // RPCReadChunk is called by client, read chunk data and return
 func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkReply) error {
+	log.Infof("RPCReadChunk, addr[%s], args[%+v]", cs.address, args)
+
+	cs.RLock()
+	defer cs.RUnlock()
+	if _, ok := cs.chunk[args.Handle]; !ok {
+		log.Errorf("RPCReadChunk, err[%s]", gfs.ErrNoSuchHandle)
+		return gfs.ErrNoSuchHandle
+	}
+
+	info := cs.chunk[args.Handle]
+	info.RLock()
+	defer info.RUnlock()
+
+	if args.Offset > info.length {
+		log.Errorf("RPCReadChunk, err[%s]", gfs.ErrReadExceedFileSize)
+		return gfs.ErrReadExceedFileSize
+	}
+
+	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.Handle), 10))
+	fp, err := os.OpenFile(chunkPath, os.O_RDONLY, 0644)
+	if err != nil {
+		log.Errorf("RPCReadChunk, err[%s]", err)
+		return err
+	}
+	defer fp.Close()
+
+	reply.Data = make([]byte, args.Length)
+	reply.Length = args.Length
+	n, err := fp.ReadAt(reply.Data, int64(args.Offset))
+
+	if err != nil {
+		log.Errorf("RPCReadChunk, err[%s]", err)
+		return err
+	}
+
+	if n != args.Length {
+		log.Errorf("RPCReadChunk, err[%s]", gfs.ErrReadIncomplete)
+		return gfs.ErrReadIncomplete
+	}
+
+	log.Infof("RPCReadChunk, read[%s] data[%v] bufferLen[%v]", chunkPath, reply.Data, args.Length)
+
 	return nil
 }
 
@@ -259,6 +300,19 @@ func (cs *ChunkServer) applyMutation(handle gfs.ChunkHandle, offset gfs.Offset, 
 		return gfs.ErrWriteExceedChunkSize
 	}
 
+	cs.RLock()
+	defer cs.RUnlock()
+	if _, ok := cs.chunk[handle]; !ok {
+		log.Errorf("applyMutation, err[%s]", gfs.ErrNoSuchHandle)
+		return gfs.ErrNoSuchHandle
+	}
+
+	info := cs.chunk[handle]
+	info.Lock()
+	defer info.Unlock()
+
+	info.length = gfs.Offset(int64(info.length) + int64(dataLen))
+
 	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(handle), 10))
 	fp, err := os.OpenFile(chunkPath, os.O_WRONLY, 0644)
 	if err != nil {
@@ -275,7 +329,7 @@ func (cs *ChunkServer) applyMutation(handle gfs.ChunkHandle, offset gfs.Offset, 
 		return err
 	}
 
-	if n != len(data) {
+	if n != dataLen {
 		err = gfs.ErrWriteIncomplete
 		log.Errorf("applyMutation, err[%s]", err)
 		return err
