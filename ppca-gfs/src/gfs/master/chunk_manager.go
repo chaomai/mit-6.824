@@ -1,10 +1,11 @@
 package master
 
 import (
-	"gfs"
-	"gfs/util"
 	"sync"
 	"time"
+
+	"gfs"
+	"gfs/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -123,6 +124,19 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 	info.primary = info.location.RandomPick().(gfs.ServerAddress)
 	info.expire = time.Now().Add(gfs.LeaseExpire)
 	info.version++
+
+	for _, v := range info.location.GetAll() {
+		addr := v.(gfs.ServerAddress)
+
+		rpcArgs := gfs.GrantLeaseArg{Handle: handle, Version: info.version}
+		rpcReply := new(gfs.GrantLeaseReply)
+		if err := util.Call(addr, "ChunkServer.GrantLease", rpcArgs, rpcReply); err == gfs.ErrStaleVersionAtMaster {
+			log.Warnf("RPCGrantLease, master chunk version[%s], cs chunk version[%s], err[%s]", info.version, rpcReply.NewestVersion, err)
+			info.version = rpcReply.NewestVersion
+		} else if err != nil {
+			log.Errorf("GetLeaseHolder, err[%s]", err)
+		}
+	}
 
 	l = new(Lease)
 	l.Primary = info.primary

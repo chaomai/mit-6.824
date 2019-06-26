@@ -1,22 +1,23 @@
 package main
 
 import (
-	"gfs"
-	"gfs/chunkserver"
-	"gfs/client"
-	"gfs/master"
-	"gfs/util"
-	"reflect"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"gfs"
+	"gfs/chunkserver"
+	"gfs/client"
+	"gfs/master"
+	"gfs/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -182,7 +183,7 @@ func checkReplicas(handle gfs.ChunkHandle, length int, t *testing.T) int {
 		err := util.Call(addr, "ChunkServer.RPCReadChunk", args, &r)
 		if err == nil {
 			data = append(data, r.Data)
-			//fmt.Println("find in ", addr)
+			// fmt.Println("find in ", addr)
 		}
 	}
 
@@ -403,7 +404,7 @@ func TestComprehensiveOperation(t *testing.T) {
 					x := createCt.Next()
 					p := gfs.Path(fmt.Sprintf("/haha%v.txt", x))
 
-					//fmt.Println("create ", p)
+					// fmt.Println("create ", p)
 					err := c.Create(p)
 					if err != nil {
 						t.Error(err)
@@ -430,7 +431,7 @@ func TestComprehensiveOperation(t *testing.T) {
 			for p := range line[0] {
 				x := sendCt.Next()
 
-				//fmt.Println("append ", p, "  ", tmp)
+				// fmt.Println("append ", p, "  ", tmp)
 				_, err := c.Append(p, []byte(fmt.Sprintf("%10d,", x)))
 				if err != nil {
 					t.Error(err)
@@ -469,7 +470,7 @@ func TestComprehensiveOperation(t *testing.T) {
 					continue
 				}
 				buf = buf[:n-1]
-				//fmt.Println("read ", p, " at ", pos, " : ", string(buf))
+				// fmt.Println("read ", p, " at ", pos, " : ", string(buf))
 
 				lock2.Lock()
 				for _, v := range strings.Split(string(buf), ",") {
@@ -787,7 +788,7 @@ func TestMain(tm *testing.M) {
 		log.Fatal("cannot create temporary directory: ", err)
 	}
 
-	//log.SetLevel(log.FatalLevel)
+	// log.SetLevel(log.FatalLevel)
 
 	// run master
 	os.Mkdir(path.Join(root, "m"), 0755)

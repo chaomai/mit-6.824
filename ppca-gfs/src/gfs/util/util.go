@@ -1,12 +1,16 @@
 package util
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"net/rpc"
 
 	"gfs"
 )
+
+var fnvHash = fnv.New32()
 
 // Call is RPC call helper
 func Call(srv gfs.ServerAddress, rpcname string, args interface{}, reply interface{}) error {
@@ -53,4 +57,16 @@ func Sample(n, k int) ([]int, error) {
 		return nil, fmt.Errorf("population is not enough for sampling (n = %d, k = %d)", n, k)
 	}
 	return rand.Perm(n)[:k], nil
+}
+
+func Fnv32(data []byte) (hash uint32, err error) {
+	_, err = fnvHash.Write(data)
+	defer fnvHash.Reset()
+
+	if err != nil {
+		return
+	}
+
+	hash = binary.BigEndian.Uint32(fnvHash.Sum(nil))
+	return
 }

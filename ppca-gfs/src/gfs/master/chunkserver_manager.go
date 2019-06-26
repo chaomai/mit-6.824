@@ -1,10 +1,11 @@
 package master
 
 import (
-	"gfs"
-	"gfs/util"
 	"sync"
 	"time"
+
+	"gfs"
+	"gfs/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -27,7 +28,7 @@ type chunkServerInfo struct {
 	chunks        map[gfs.ChunkHandle]bool // set of chunks that the chunkserver has
 }
 
-// Hearbeat marks the chunkserver alive for now.
+// Heartbeat marks the chunkserver alive for now.
 func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress) {
 	csm.Lock()
 	defer csm.Unlock()

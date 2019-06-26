@@ -4,7 +4,22 @@ import (
 	"time"
 )
 
-//------ ChunkServer
+// ------ ChunkServer
+type GrantLeaseArg struct {
+	Handle  ChunkHandle
+	Version ChunkVersion
+}
+type GrantLeaseReply struct {
+	NewestVersion ChunkVersion
+	ErrorCode     ErrorCode
+}
+
+type GetChunksArg struct {
+}
+type GetChunksReply struct {
+	Chunks    []CSChunkInfo
+	ErrorCode ErrorCode
+}
 
 type PushDataAndForwardArg struct {
 	Handle    ChunkHandle
@@ -36,6 +51,7 @@ type WriteChunkArg struct {
 	DataID      DataBufferID
 	Offset      Offset
 	Secondaries []ServerAddress
+	Version     ChunkVersion
 }
 type WriteChunkReply struct {
 	ErrorCode ErrorCode
@@ -44,6 +60,7 @@ type WriteChunkReply struct {
 type AppendChunkArg struct {
 	DataID      DataBufferID
 	Secondaries []ServerAddress
+	Version     ChunkVersion
 }
 type AppendChunkReply struct {
 	Offset    Offset
@@ -95,7 +112,7 @@ type ApplyCopyReply struct {
 	ErrorCode ErrorCode
 }
 
-//------ Master
+// ------ Master
 
 type HeartbeatArg struct {
 	Address         ServerAddress // chunkserver address
@@ -110,6 +127,7 @@ type GetPrimaryAndSecondariesReply struct {
 	Primary     ServerAddress
 	Expire      time.Time
 	Secondaries []ServerAddress
+	Version     ChunkVersion
 }
 
 type ExtendLeaseArg struct {

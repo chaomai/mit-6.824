@@ -91,7 +91,14 @@ func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byt
 	idx := samples[0]
 	addr := rpcReply.Locations[idx]
 
-	rpcRCArgs := gfs.ReadChunkArg{Handle: handle, Offset: offset, Length: cap(data)}
+	var readLen int
+	if gfs.MaxChunkSize-offset > gfs.Offset(cap(data)) {
+		readLen = cap(data)
+	} else {
+		readLen = int(gfs.MaxChunkSize - offset)
+	}
+
+	rpcRCArgs := gfs.ReadChunkArg{Handle: handle, Offset: offset, Length: readLen}
 	rpcRCReply := new(gfs.ReadChunkReply)
 
 	err = util.Call(addr, "ChunkServer.RPCReadChunk", rpcRCArgs, rpcRCReply)
@@ -131,7 +138,7 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 		return err
 	}
 
-	rpcWArgs := gfs.WriteChunkArg{DataID: rpcPDAFReply.DataID, Offset: offset, Secondaries: lease.Secondaries}
+	rpcWArgs := gfs.WriteChunkArg{DataID: rpcPDAFReply.DataID, Offset: offset, Secondaries: lease.Secondaries, Version: lease.Version}
 	rpcWReply := new(gfs.WriteChunkReply)
 	if err := util.Call(lease.Primary, "ChunkServer.RPCWriteChunk", rpcWArgs, rpcWReply); err != nil {
 		log.Errorf("WriteChunk, err[%s]", err)
@@ -145,5 +152,27 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 // Chunk offset of the start of data will be returned if success.
 // len(data) should be within max append size.
 func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Offset, err error) {
-	return 0, nil
+	lease, err := c.leases.getChunkLease(handle)
+	if err != nil {
+		log.Errorf("AppendChunk, err[%s]", err)
+		return
+	}
+
+	rpcPDAFArgs := gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: lease.Secondaries}
+	rpcPDAFReply := new(gfs.PushDataAndForwardReply)
+	err = util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply)
+	if err != nil {
+		log.Errorf("AppendChunk, err[%s]", err)
+		return
+	}
+
+	rpcAArgs := gfs.AppendChunkArg{DataID: rpcPDAFReply.DataID, Secondaries: lease.Secondaries, Version: lease.Version}
+	rpcAReply := new(gfs.AppendChunkReply)
+	err = util.Call(lease.Primary, "ChunkServer.RPCAppendChunk", rpcAArgs, rpcAReply)
+	if err != nil {
+		log.Errorf("AppendChunk, err[%s]", err)
+		return
+	}
+
+	return
 }

@@ -11,6 +11,7 @@ type Offset int64
 type ChunkIndex int
 type ChunkHandle int64
 type ChunkVersion int64
+type ChunkCheckSum uint32
 
 type DataBufferID struct {
 	Handle    ChunkHandle
@@ -67,6 +68,8 @@ var (
 	ErrReadIncomplete             = errors.New("read incomplete")
 	ErrWriteExceedChunkSize       = errors.New("write exceed chunk size")
 	ErrWriteIncomplete            = errors.New("write incomplete")
+	ErrStaleVersionAtMaster       = errors.New("version is stale as master")
+	ErrStaleVersionAtChunkServer  = errors.New("version is stale as chunkserver")
 )
 
 // extended error type with error code
@@ -77,6 +80,12 @@ type Error struct {
 
 func (e Error) Error() string {
 	return e.Err
+}
+
+type CSChunkInfo struct {
+	Handle  ChunkHandle
+	Length  Offset
+	Version ChunkVersion // version number of the chunk in disk
 }
 
 // system config

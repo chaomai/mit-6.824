@@ -1,10 +1,11 @@
 package master
 
 import (
-	"gfs"
 	"net"
 	"net/rpc"
 	"time"
+
+	"gfs"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -125,6 +126,7 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 	reply.Primary = l.Primary
 	reply.Secondaries = l.Secondaries
 	reply.Expire = l.Expire
+	reply.Version = l.Version
 
 	return nil
 }
