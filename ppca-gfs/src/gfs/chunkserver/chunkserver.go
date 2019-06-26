@@ -291,30 +291,42 @@ func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkR
 
 // RPCWriteChunk is called by client
 // applies chunk write to itself (primary) and asks secondaries to do the same.
-func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChunkReply) error {
+func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChunkReply) (err error) {
 	log.Infof("RPCWriteChunk, addr[%s], args[%+v]", cs.address, args)
+
+	cs.RLock()
+	defer cs.RUnlock()
+	if _, ok := cs.chunk[args.DataID.Handle]; !ok {
+		err = gfs.ErrNoSuchHandle
+		log.Errorf("RPCWriteChunk, err[%s]", err)
+		return
+	}
+
+	info := cs.chunk[args.DataID.Handle]
+	info.Lock()
+	defer info.Unlock()
 
 	retErrCh := make(chan error, gfs.DefaultNumReplicas)
 	rpcArgs := gfs.ApplyMutationArg{Mtype: gfs.MutationWrite, Version: args.Version, DataID: args.DataID, Offset: args.Offset}
 
 	go func() {
-		err := cs.applyMutation(rpcArgs)
-		if err != nil {
-			log.Errorf("RPCWriteChunk, err[%s]", err)
+		errx := cs.applyMutation(rpcArgs, info)
+		if errx != nil {
+			log.Errorf("RPCWriteChunk, err[%s]", errx)
 		}
 
-		retErrCh <- err
+		retErrCh <- errx
 	}()
 
 	for _, v := range args.Secondaries {
 		go func(addr gfs.ServerAddress) {
 			rpcReply := new(gfs.ApplyMutationReply)
-			err := util.Call(addr, "ChunkServer.RPCApplyMutation", rpcArgs, rpcReply)
-			if err != nil {
-				log.Errorf("RPCWriteChunk, err[%s]", err)
+			errx := util.Call(addr, "ChunkServer.RPCApplyMutation", rpcArgs, rpcReply)
+			if errx != nil {
+				log.Errorf("RPCWriteChunk, err[%s]", errx)
 			}
 
-			retErrCh <- err
+			retErrCh <- errx
 		}(v)
 	}
 
@@ -325,127 +337,201 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 		}
 	}
 
-	return nil
+	return
 }
 
 // RPCAppendChunk is called by client to apply atomic record append.
 // The length of data should be within max append size.
 // If the chunk size after appending the data will excceed the limit,
 // pad current chunk and ask the client to retry on the next chunk.
-func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.AppendChunkReply) error {
-	return nil
+func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.AppendChunkReply) (err error) {
+	log.Infof("RPCAppendChunk, addr[%s], args[%+v]", cs.address, args)
+
+	cs.RLock()
+	defer cs.RUnlock()
+	if _, ok := cs.chunk[args.DataID.Handle]; !ok {
+		err = gfs.ErrNoSuchHandle
+		log.Errorf("RPCAppendChunk, err[%s]", err)
+		return
+	}
+
+	info := cs.chunk[args.DataID.Handle]
+	info.Lock()
+	defer info.Unlock()
+
+	retErrCh := make(chan error, gfs.DefaultNumReplicas)
+	rpcArgs := gfs.ApplyMutationArg{Mtype: gfs.MutationAppend, Version: args.Version, DataID: args.DataID}
+
+	go func() {
+		errx := cs.applyMutation(rpcArgs, info)
+		if errx != nil {
+			log.Errorf("RPCAppendChunk, err[%s]", errx)
+		}
+
+		retErrCh <- errx
+	}()
+
+	for _, v := range args.Secondaries {
+		go func(addr gfs.ServerAddress) {
+			rpcReply := new(gfs.ApplyMutationReply)
+			errx := util.Call(addr, "ChunkServer.RPCApplyMutation", rpcArgs, rpcReply)
+			if errx != nil {
+				log.Errorf("RPCAppendChunk, err[%s]", errx)
+			}
+
+			retErrCh <- errx
+		}(v)
+	}
+
+	for i := 0; i < gfs.DefaultNumReplicas; i++ {
+		err = <-retErrCh
+		if err != nil {
+			log.Errorf("RPCWriteChunk, err[%s]", err)
+			return
+		}
+	}
+
+	return
 }
 
-func (cs *ChunkServer) applyMutation(args gfs.ApplyMutationArg) error {
+func (cs *ChunkServer) applyMutation(args gfs.ApplyMutationArg, info *chunkInfo) error {
 	switch args.Mtype {
 	case gfs.MutationWrite:
-		return cs.applyWrite(args.DataID, args.Version, args.Offset)
+		return cs.applyWrite(args, info)
 	case gfs.MutationAppend:
-		return cs.applyAppend(args.DataID, args.Version)
+		return cs.applyAppend(args, info)
 	default:
 		return nil
 	}
 }
 
-func (cs *ChunkServer) applyWrite(dataID gfs.DataBufferID, version gfs.ChunkVersion, offset gfs.Offset) error {
-	data, ok := cs.dl.Get(dataID)
+func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo) (err error) {
+	data, ok := cs.dl.Get(args.DataID)
 	if !ok {
-		log.Errorf("applyWrite, err[%s]", gfs.ErrNoSuchDataID)
-		return gfs.ErrNoSuchDataID
+		err = gfs.ErrNoSuchDataID
+		log.Errorf("applyWrite, err[%s]", err)
+		return
 	}
 
 	dataLen := len(data)
-	if int64(offset)+int64(dataLen) > gfs.MaxChunkSize {
-		log.Errorf("applyWrite, err[%s]", gfs.ErrWriteExceedChunkSize)
-		return gfs.ErrWriteExceedChunkSize
+	if int64(args.Offset)+int64(dataLen) > gfs.MaxChunkSize {
+		err = gfs.ErrWriteExceedChunkSize
+		log.Errorf("applyWrite, err[%s]", err)
+		return
 	}
 
-	cs.RLock()
-	defer cs.RUnlock()
-	if _, ok := cs.chunk[dataID.Handle]; !ok {
-		log.Errorf("applyWrite, err[%s]", gfs.ErrNoSuchHandle)
-		return gfs.ErrNoSuchHandle
-	}
-
-	info := cs.chunk[dataID.Handle]
-	info.Lock()
-	defer info.Unlock()
-
-	if info.version != version {
-		log.Errorf("applyWrite, err[%s]", gfs.ErrStaleVersionAtChunkServer)
-		return gfs.ErrStaleVersionAtChunkServer
+	if info.version != args.Version {
+		err = gfs.ErrStaleVersionAtChunkServer
+		log.Errorf("applyWrite, err[%s]", err)
+		return
 	}
 
 	info.length = gfs.Offset(int64(info.length) + int64(dataLen))
 
-	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(dataID.Handle), 10))
+	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.DataID.Handle), 10))
 	fp, err := os.OpenFile(chunkPath, os.O_WRONLY, 0644)
 	if err != nil {
 		log.Errorf("applyWrite, err[%s]", err)
-		return err
+		return
 	}
 	defer fp.Close()
 
-	log.Infof("applyWrite, write[%s] data[%v] offset[%v]", chunkPath, data, offset)
+	log.Infof("applyWrite, write[%s] data[%v] offset[%v]", chunkPath, data, args.Offset)
 
-	n, err := fp.WriteAt(data, int64(offset))
+	n, err := fp.WriteAt(data, int64(args.Offset))
 	if err != nil {
 		log.Errorf("applyWrite, err[%s]", err)
-		return err
+		return
 	}
 
 	if n != dataLen {
 		err = gfs.ErrWriteIncomplete
 		log.Errorf("applyWrite, err[%s]", err)
-		return err
+		return
 	}
 
-	return nil
+	return
 }
 
-func (cs *ChunkServer) applyAppend(dataID gfs.DataBufferID, version gfs.ChunkVersion) error {
-	data, ok := cs.dl.Get(dataID)
+func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (err error) {
+	data, ok := cs.dl.Get(args.DataID)
 	if !ok {
-		log.Errorf("applyAppend, err[%s]", gfs.ErrNoSuchDataID)
-		return gfs.ErrNoSuchDataID
-	}
-
-	cs.RLock()
-	defer cs.RUnlock()
-	if _, ok := cs.chunk[dataID.Handle]; !ok {
-		log.Errorf("applyAppend, err[%s]", gfs.ErrNoSuchHandle)
-		return gfs.ErrNoSuchHandle
-	}
-
-	info := cs.chunk[dataID.Handle]
-	info.Lock()
-	defer info.Unlock()
-
-	if info.version != version {
-		log.Errorf("applyAppend, err[%s]", gfs.ErrStaleVersionAtChunkServer)
-		return gfs.ErrStaleVersionAtChunkServer
+		err = gfs.ErrNoSuchDataID
+		log.Errorf("applyAppend, err[%s]", err)
+		return
 	}
 
 	dataLen := len(data)
-	if int64(info.length)+int64(dataLen) > gfs.MaxChunkSize {
-		log.Errorf("applyAppend, err[%s]", gfs.ErrWriteExceedChunkSize)
-		return gfs.ErrWriteExceedChunkSize
+	if len(data) > gfs.MaxAppendSize {
+		err = gfs.ErrAppendExceedMaxAppendSize
+		log.Errorf("applyAppend, err[%s]", err)
+		return
 	}
 
-	return nil
+	if int64(info.length)+int64(dataLen) > gfs.MaxChunkSize {
+		err = gfs.ErrAppendExceedChunkSize
+		log.Errorf("applyAppend, err[%s]", err)
+		return
+	}
+
+	if info.version != args.Version {
+		err = gfs.ErrStaleVersionAtChunkServer
+		log.Errorf("applyAppend, err[%s]", err)
+		return
+	}
+
+	info.length = gfs.Offset(int64(info.length) + int64(dataLen))
+
+	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.DataID.Handle), 10))
+	fp, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Errorf("applyAppend, err[%s]", err)
+		return
+	}
+	defer fp.Close()
+
+	log.Infof("applyAppend, write[%s] data[%v]", chunkPath, data)
+
+	n, err := fp.Write(data)
+	if err != nil {
+		log.Errorf("applyAppend, err[%s]", err)
+		return
+	}
+
+	if n != dataLen {
+		err = gfs.ErrWriteIncomplete
+		log.Errorf("applyAppend, err[%s]", err)
+		return
+	}
+
+	return
 }
 
 // RPCApplyMutation is called by primary to apply mutations
-func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.ApplyMutationReply) error {
+func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.ApplyMutationReply) (err error) {
 	log.Infof("RPCApplyMutation, addr[%s], args[%+v]", cs.address, args)
 
-	err := cs.applyMutation(args)
+	cs.RLock()
+	defer cs.RUnlock()
+	if _, ok := cs.chunk[args.DataID.Handle]; !ok {
+		err = gfs.ErrNoSuchHandle
+		log.Errorf("RPCApplyMutation, err[%s]", err)
+		return
+	}
+
+	info := cs.chunk[args.DataID.Handle]
+	info.Lock()
+	defer info.Unlock()
+
+	rpcArgs := gfs.ApplyMutationArg{Mtype: args.Mtype, Version: args.Version, DataID: args.DataID, Offset: args.Offset}
+
+	err = cs.applyMutation(rpcArgs, info)
 	if err != nil {
 		log.Errorf("RPCApplyMutation, err[%s]", err)
 		return err
 	}
 
-	return nil
+	return
 }
 
 // RPCSendCopy is called by master, send the whole copy to given address

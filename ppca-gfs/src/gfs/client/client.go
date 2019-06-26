@@ -124,34 +124,48 @@ func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byt
 
 // WriteChunk writes data to the chunk at specific offset.
 // len(data)+offset should be within chunk size.
-func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) error {
+func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) (err error) {
+	if int64(offset)+int64(len(data)) > gfs.MaxChunkSize {
+		err = gfs.ErrWriteExceedChunkSize
+		log.Errorf("applyWrite, err[%s]", err)
+		return
+	}
+
 	lease, err := c.leases.getChunkLease(handle)
 	if err != nil {
 		log.Errorf("WriteChunk, err[%s]", err)
-		return err
+		return
 	}
 
 	rpcPDAFArgs := gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: lease.Secondaries}
 	rpcPDAFReply := new(gfs.PushDataAndForwardReply)
-	if err := util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply); err != nil {
+	err = util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply)
+	if err != nil {
 		log.Errorf("WriteChunk, err[%s]", err)
-		return err
+		return
 	}
 
 	rpcWArgs := gfs.WriteChunkArg{DataID: rpcPDAFReply.DataID, Offset: offset, Secondaries: lease.Secondaries, Version: lease.Version}
 	rpcWReply := new(gfs.WriteChunkReply)
-	if err := util.Call(lease.Primary, "ChunkServer.RPCWriteChunk", rpcWArgs, rpcWReply); err != nil {
+	err = util.Call(lease.Primary, "ChunkServer.RPCWriteChunk", rpcWArgs, rpcWReply)
+	if err != nil {
 		log.Errorf("WriteChunk, err[%s]", err)
-		return err
+		return
 	}
 
-	return nil
+	return
 }
 
 // AppendChunk appends data to a chunk.
 // Chunk offset of the start of data will be returned if success.
 // len(data) should be within max append size.
 func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Offset, err error) {
+	if len(data) > gfs.MaxAppendSize {
+		err = gfs.ErrAppendExceedMaxAppendSize
+		log.Errorf("AppendChunk, err[%s]", err)
+		return
+	}
+
 	lease, err := c.leases.getChunkLease(handle)
 	if err != nil {
 		log.Errorf("AppendChunk, err[%s]", err)
@@ -173,6 +187,8 @@ func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Of
 		log.Errorf("AppendChunk, err[%s]", err)
 		return
 	}
+
+	offset = rpcAReply.Offset
 
 	return
 }

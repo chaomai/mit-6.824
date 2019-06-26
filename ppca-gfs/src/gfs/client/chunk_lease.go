@@ -1,11 +1,12 @@
 package client
 
 import (
+	"sync"
+	"time"
+
 	"gfs"
 	"gfs/master"
 	"gfs/util"
-	"sync"
-	"time"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -37,7 +38,7 @@ func (cl *chunkLease) getChunkLease(handle gfs.ChunkHandle) (l *master.Lease, er
 			return
 		}
 
-		cl.leases[handle] = &master.Lease{Primary: rpcReply.Primary, Secondaries: rpcReply.Secondaries, Expire: rpcReply.Expire}
+		cl.leases[handle] = &master.Lease{Primary: rpcReply.Primary, Secondaries: rpcReply.Secondaries, Expire: rpcReply.Expire, Version: rpcReply.Version}
 		l = cl.leases[handle]
 	}
 

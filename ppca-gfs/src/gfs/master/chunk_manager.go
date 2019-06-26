@@ -130,7 +130,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 
 		rpcArgs := gfs.GrantLeaseArg{Handle: handle, Version: info.version}
 		rpcReply := new(gfs.GrantLeaseReply)
-		if err := util.Call(addr, "ChunkServer.GrantLease", rpcArgs, rpcReply); err == gfs.ErrStaleVersionAtMaster {
+		if err := util.Call(addr, "ChunkServer.RPCGrantLease", rpcArgs, rpcReply); err == gfs.ErrStaleVersionAtMaster {
 			log.Warnf("RPCGrantLease, master chunk version[%s], cs chunk version[%s], err[%s]", info.version, rpcReply.NewestVersion, err)
 			info.version = rpcReply.NewestVersion
 		} else if err != nil {

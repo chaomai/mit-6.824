@@ -49,7 +49,6 @@ type ErrorCode int
 // )
 
 var (
-	ErrAppendExceedChunkSize      = errors.New("append exceed chunk size")
 	ErrChunkExists                = errors.New("chunk exists")
 	ErrDirectoryExists            = errors.New("directory exists")
 	ErrDiscontinuousChunk         = errors.New("discontinuous chunk should not be created")
@@ -67,6 +66,8 @@ var (
 	ErrReadExceedFileSize         = errors.New("read exceed file size")
 	ErrReadIncomplete             = errors.New("read incomplete")
 	ErrWriteExceedChunkSize       = errors.New("write exceed chunk size")
+	ErrAppendExceedChunkSize      = errors.New("append exceed chunk size")
+	ErrAppendExceedMaxAppendSize  = errors.New("append exceed max append size")
 	ErrWriteIncomplete            = errors.New("write incomplete")
 	ErrStaleVersionAtMaster       = errors.New("version is stale as master")
 	ErrStaleVersionAtChunkServer  = errors.New("version is stale as chunkserver")
