@@ -32,9 +32,13 @@ func (cl *chunkLease) getChunkLease(handle gfs.ChunkHandle) (l *master.Lease, er
 		rpcArgs := gfs.GetPrimaryAndSecondariesArg{Handle: handle}
 		rpcReply := new(gfs.GetPrimaryAndSecondariesReply)
 
-		err = util.Call(cl.master, "Master.RPCGetPrimaryAndSecondaries", rpcArgs, rpcReply)
-		if err != nil {
-			log.Errorf("WriteChunk, err[%s]", err)
+		if errx := util.Call(cl.master, "Master.RPCGetPrimaryAndSecondaries", rpcArgs, rpcReply); errx != nil {
+			log.Errorf("RPCGetPrimaryAndSecondaries, call err[%s]", errx)
+			err = errx
+			return
+		} else if rpcReply.Error != nil {
+			log.Errorf("RPCGetPrimaryAndSecondaries, err[%s]", rpcReply.Error)
+			err = rpcReply.Error
 			return
 		}
 

@@ -61,7 +61,7 @@ func (cm *chunkManager) GetReplicas(handle gfs.ChunkHandle) (loc *util.ArraySet,
 
 	if _, ok := cm.chunk[handle]; !ok {
 		err = gfs.ErrNoSuchHandle
-		log.Errorf("GetReplicas, handle[%d], err[%s]", handle, err)
+		log.Errorf("GetReplicas, handle[%d], err[%v]", handle, err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.Chunk
 		return handles[index], nil
 	}
 
-	log.Errorf("GetChunk, file[%s], err[%s]", path, gfs.ErrNoChunks)
+	log.Errorf("GetChunk, file[%s], err[%v]", path, gfs.ErrNoChunks)
 	return 0, gfs.ErrNoChunks
 }
 
@@ -96,7 +96,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 
 	if _, ok := cm.chunk[handle]; !ok {
 		err = gfs.ErrNoSuchHandle
-		log.Errorf("GetLeaseHolder, handle[%d], err[%s]", handle, err)
+		log.Errorf("GetLeaseHolder, handle[%d], err[%v]", handle, err)
 		return
 	}
 
@@ -130,11 +130,18 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 
 		rpcArgs := gfs.GrantLeaseArg{Handle: handle, Version: info.version}
 		rpcReply := new(gfs.GrantLeaseReply)
-		if err := util.Call(addr, "ChunkServer.RPCGrantLease", rpcArgs, rpcReply); err == gfs.ErrStaleVersionAtMaster {
-			log.Warnf("RPCGrantLease, master chunk version[%s], cs chunk version[%s], err[%s]", info.version, rpcReply.NewestVersion, err)
+		errx := util.Call(addr, "ChunkServer.RPCGrantLease", rpcArgs, rpcReply)
+		if errx != nil {
+			log.Errorf("GetLeaseHolder, call err[%v]", errx)
+			err = errx
+			return
+		} else if rpcReply.Error == gfs.ErrStaleVersionAtMaster {
+			log.Warnf("GetLeaseHolder, master chunk version[%s], cs chunk version[%s], err[%v]", info.version, rpcReply.NewestVersion, err)
 			info.version = rpcReply.NewestVersion
-		} else if err != nil {
-			log.Errorf("GetLeaseHolder, err[%s]", err)
+		} else if rpcReply.Error != nil {
+			log.Errorf("GetLeaseHolder, err[%v]", rpcReply.Error)
+			err = rpcReply.Error
+			return
 		}
 	}
 
@@ -159,7 +166,7 @@ func (cm *chunkManager) ExtendLease(handle gfs.ChunkHandle, primary gfs.ServerAd
 	defer cm.RUnlock()
 
 	if _, ok := cm.chunk[handle]; !ok {
-		log.Errorf("ExtendLease, handle[%d], err[%s]", handle, gfs.ErrNoSuchHandle)
+		log.Errorf("ExtendLease, handle[%d], err[%v]", handle, gfs.ErrNoSuchHandle)
 		return gfs.ErrNoSuchHandle
 	}
 
@@ -184,9 +191,14 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (h
 	cInfo := new(chunkInfo)
 	cInfo.path = path
 	for _, addr := range addrs {
-		err = util.Call(addr, "ChunkServer.RPCCreateChunk", rpcArgs, rpcReply)
-		if err != nil {
-			log.Errorf("CreateChunk, addr[%s], err[%s]", addr, err)
+		errx := util.Call(addr, "ChunkServer.RPCCreateChunk", rpcArgs, rpcReply)
+		if errx != nil {
+			log.Errorf("CreateChunk, call err[%v]", errx)
+			err = errx
+			return
+		} else if rpcReply.Error != nil {
+			log.Errorf("CreateChunk, err[%v]", rpcReply.Error)
+			err = rpcReply.Error
 			return
 		}
 
@@ -200,5 +212,5 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (h
 	cm.chunk[handle] = cInfo
 	cm.file[path] = fInfo
 
-	return 0, nil
+	return
 }

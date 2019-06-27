@@ -11,14 +11,14 @@ type GrantLeaseArg struct {
 }
 type GrantLeaseReply struct {
 	NewestVersion ChunkVersion
-	ErrorCode     ErrorCode
+	Error         error
 }
 
 type GetChunksArg struct {
 }
 type GetChunksReply struct {
-	Chunks    []CSChunkInfo
-	ErrorCode ErrorCode
+	Chunks []CSChunkInfo
+	Error  error
 }
 
 type PushDataAndForwardArg struct {
@@ -28,8 +28,8 @@ type PushDataAndForwardArg struct {
 	ForwardTo []ServerAddress
 }
 type PushDataAndForwardReply struct {
-	DataID    DataBufferID
-	ErrorCode ErrorCode
+	DataID DataBufferID
+	Error  error
 }
 
 type ForwardDataArg struct {
@@ -37,14 +37,14 @@ type ForwardDataArg struct {
 	Data   []byte
 }
 type ForwardDataReply struct {
-	ErrorCode ErrorCode
+	Error error
 }
 
 type CreateChunkArg struct {
 	Handle ChunkHandle
 }
 type CreateChunkReply struct {
-	ErrorCode ErrorCode
+	Error error
 }
 
 type WriteChunkArg struct {
@@ -54,7 +54,7 @@ type WriteChunkArg struct {
 	Version     ChunkVersion
 }
 type WriteChunkReply struct {
-	ErrorCode ErrorCode
+	Error error
 }
 
 type AppendChunkArg struct {
@@ -63,8 +63,8 @@ type AppendChunkArg struct {
 	Version     ChunkVersion
 }
 type AppendChunkReply struct {
-	Offset    Offset
-	ErrorCode ErrorCode
+	Offset Offset
+	Error  error
 }
 
 type ApplyMutationArg struct {
@@ -74,14 +74,14 @@ type ApplyMutationArg struct {
 	Offset  Offset
 }
 type ApplyMutationReply struct {
-	ErrorCode ErrorCode
+	Error error
 }
 
 type PadChunkArg struct {
 	Handle ChunkHandle
 }
 type PadChunkReply struct {
-	ErrorCode ErrorCode
+	Error error
 }
 
 type ReadChunkArg struct {
@@ -90,9 +90,9 @@ type ReadChunkArg struct {
 	Length int
 }
 type ReadChunkReply struct {
-	Data      []byte
-	Length    int
-	ErrorCode ErrorCode
+	Data   []byte
+	Length int
+	Error  error
 }
 
 type SendCopyArg struct {
@@ -100,7 +100,7 @@ type SendCopyArg struct {
 	Address ServerAddress
 }
 type SendCopyReply struct {
-	ErrorCode ErrorCode
+	Error error
 }
 
 type ApplyCopyArg struct {
@@ -109,7 +109,7 @@ type ApplyCopyArg struct {
 	Version ChunkVersion
 }
 type ApplyCopyReply struct {
-	ErrorCode ErrorCode
+	Error error
 }
 
 // ------ Master
@@ -118,7 +118,9 @@ type HeartbeatArg struct {
 	Address         ServerAddress // chunkserver address
 	LeaseExtensions []ChunkHandle // leases to be extended
 }
-type HeartbeatReply struct{}
+type HeartbeatReply struct {
+	Error error
+}
 
 type GetPrimaryAndSecondariesArg struct {
 	Handle ChunkHandle
@@ -128,6 +130,7 @@ type GetPrimaryAndSecondariesReply struct {
 	Expire      time.Time
 	Secondaries []ServerAddress
 	Version     ChunkVersion
+	Error       error
 }
 
 type ExtendLeaseArg struct {
@@ -136,6 +139,7 @@ type ExtendLeaseArg struct {
 }
 type ExtendLeaseReply struct {
 	Expire time.Time
+	Error  error
 }
 
 type GetReplicasArg struct {
@@ -143,6 +147,7 @@ type GetReplicasArg struct {
 }
 type GetReplicasReply struct {
 	Locations []ServerAddress
+	Error     error
 }
 
 type GetFileInfoArg struct {
@@ -152,28 +157,36 @@ type GetFileInfoReply struct {
 	IsDir  bool
 	Length int64
 	Chunks int64
+	Error  error
 }
 
 type CreateFileArg struct {
 	Path Path
 }
-type CreateFileReply struct{}
+type CreateFileReply struct {
+	Error error
+}
 
 type DeleteFileArg struct {
 	Path Path
 }
-type DeleteFileReply struct{}
+type DeleteFileReply struct {
+	Error error
+}
 
 type MkdirArg struct {
 	Path Path
 }
-type MkdirReply struct{}
+type MkdirReply struct {
+	Error error
+}
 
 type ListArg struct {
 	Path Path
 }
 type ListReply struct {
 	Files []PathInfo
+	Error error
 }
 
 type GetChunkHandleArg struct {
@@ -182,4 +195,5 @@ type GetChunkHandleArg struct {
 }
 type GetChunkHandleReply struct {
 	Handle ChunkHandle
+	Error  error
 }

@@ -1,7 +1,8 @@
 package gfs
 
 import (
-	"errors"
+	"encoding/gob"
+	"fmt"
 	"time"
 )
 
@@ -37,49 +38,50 @@ const (
 	MutationPad
 )
 
-type ErrorCode int
-
-// const (
-// Success = iota
-// UnknownError
-// AppendExceedChunkSize
-// WriteExceedChunkSize
-// ReadEOF
-// NotAvailableForCopy
-// )
-
 var (
-	ErrChunkExists                = errors.New("chunk exists")
-	ErrDirectoryExists            = errors.New("directory exists")
-	ErrDiscontinuousChunk         = errors.New("discontinuous chunk should not be created")
-	ErrFileExists                 = errors.New("file exists")
-	ErrFileNotExists              = errors.New("file doesn't exists")
-	ErrNoChunks                   = errors.New("no chunks")
-	ErrNoEnoughServersForReplicas = errors.New("no enough servers for replicas")
-	ErrNoReplicas                 = errors.New("no replicas")
-	ErrNoSuchDataID               = errors.New("no such data ID")
-	ErrNoSuchHandle               = errors.New("no such handle")
-	ErrPathIsNotDirectory         = errors.New("path isn't a directory")
-	ErrPathIsNotFile              = errors.New("path isn't a file")
-	ErrPathNotExists              = errors.New("path doesn't exist")
-	ErrReadEOF                    = errors.New("read eof")
-	ErrReadExceedFileSize         = errors.New("read exceed file size")
-	ErrReadIncomplete             = errors.New("read incomplete")
-	ErrWriteExceedChunkSize       = errors.New("write exceed chunk size")
-	ErrAppendExceedChunkSize      = errors.New("append exceed chunk size")
-	ErrAppendExceedMaxAppendSize  = errors.New("append exceed max append size")
-	ErrWriteIncomplete            = errors.New("write incomplete")
-	ErrStaleVersionAtMaster       = errors.New("version is stale as master")
-	ErrStaleVersionAtChunkServer  = errors.New("version is stale as chunkserver")
+	ErrChunkExists                = NewError("chunk exists")
+	ErrDirectoryExists            = NewError("directory exists")
+	ErrCreateDiscontinuousChunk   = NewError("discontinuous chunk should not be created")
+	ErrFileExists                 = NewError("file exists")
+	ErrFileNotExists              = NewError("file doesn't exists")
+	ErrNoChunks                   = NewError("no chunks")
+	ErrNoEnoughServersForReplicas = NewError("no enough servers for replicas")
+	ErrNoReplicas                 = NewError("no replicas")
+	ErrNoSuchDataID               = NewError("no such data ID")
+	ErrNoSuchHandle               = NewError("no such handle")
+	ErrPathIsNotDirectory         = NewError("path isn't a directory")
+	ErrPathIsNotFile              = NewError("path isn't a file")
+	ErrPathNotExists              = NewError("path doesn't exist")
+	ErrReadEOF                    = NewError("read eof")
+	ErrReadExceedFileSize         = NewError("read exceed file size")
+	ErrReadIncomplete             = NewError("read incomplete")
+	ErrWriteExceedChunkSize       = NewError("write exceed chunk size")
+	ErrAppendExceedChunkSize      = NewError("append exceed chunk size")
+	ErrAppendExceedMaxAppendSize  = NewError("append exceed max append size")
+	ErrWriteIncomplete            = NewError("write incomplete")
+	ErrStaleVersionAtMaster       = NewError("version is stale as master")
+	ErrStaleVersionAtChunkServer  = NewError("version is stale as chunkserver")
 )
 
-// extended error type with error code
-type Error struct {
-	Code ErrorCode
-	Err  string
+// error type
+type Error interface {
+	Error() string
 }
 
-func (e Error) Error() string {
+type GError struct {
+	Err string
+}
+
+func NewError(msg string) Error {
+	return GError{Err: msg}
+}
+
+func NewErrorf(format string, a ...interface{}) Error {
+	msg := fmt.Sprintf(format, a)
+	return GError{Err: msg}
+}
+
+func (e GError) Error() string {
 	return e.Err
 }
 
@@ -92,8 +94,8 @@ type CSChunkInfo struct {
 // system config
 const (
 	// TODO for debug
-	LeaseExpire = 1 * time.Minute
-	// LeaseExpire        = 2 * time.Second //1 * time.Minute
+	// LeaseExpire = 1 * time.Minute
+	LeaseExpire        = 2 * time.Second
 	HeartbeatInterval  = 100 * time.Millisecond
 	BackgroundInterval = 200 * time.Millisecond //
 	ServerTimeout      = 1 * time.Second        //
@@ -107,3 +109,7 @@ const (
 	DownloadBufferExpire = 2 * time.Minute
 	DownloadBufferTick   = 10 * time.Second
 )
+
+func init() {
+	gob.Register(ErrChunkExists)
+}

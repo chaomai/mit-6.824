@@ -104,8 +104,10 @@ func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) 
 	m.csm.Heartbeat(args.Address)
 
 	for _, v := range args.LeaseExtensions {
-		if err := m.cm.ExtendLease(v, args.Address); err != nil {
-			return err
+		err := m.cm.ExtendLease(v, args.Address)
+		if err != nil {
+			reply.Error = err
+			return nil
 		}
 	}
 
@@ -118,8 +120,9 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 	l, err := m.cm.GetLeaseHolder(args.Handle)
 
 	if err != nil {
-		log.Errorf("RPCGetPrimaryAndSecondaries, err[%s]", err)
-		return err
+		reply.Error = err
+		log.Errorf("RPCGetPrimaryAndSecondaries, err[%v]", err)
+		return nil
 	}
 
 	log.Infof("RPCGetPrimaryAndSecondaries, lease[%+v]", l)
@@ -135,29 +138,39 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasReply) error {
 	loc, err := m.cm.GetReplicas(args.Handle)
 	if err != nil {
-		log.Errorf("RPCGetReplicas, err[%s]", err)
-		return err
+		reply.Error = err
+		log.Errorf("RPCGetReplicas, err[%v]", err)
+		return nil
 	}
 
 	for _, e := range loc.GetAll() {
 		addr := e.(gfs.ServerAddress)
 		reply.Locations = append(reply.Locations, addr)
 	}
+
 	return nil
 }
 
 // RPCCreateFile is called by client to create a new file
 func (m *Master) RPCCreateFile(args gfs.CreateFileArg, replay *gfs.CreateFileReply) error {
-	return m.nm.Create(args.Path)
+	replay.Error = m.nm.Create(args.Path)
+	return nil
 }
 
 // RPCMkdir is called by client to make a new directory
 func (m *Master) RPCMkdir(args gfs.MkdirArg, replay *gfs.MkdirReply) error {
-	return m.nm.Mkdir(args.Path)
+	replay.Error = m.nm.Mkdir(args.Path)
+	return nil
 }
 
 // RPCGetFileInfo is called by client to get file information
 func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoReply) error {
+	isDir, length, chunks, err := m.nm.GetFileInfo(args.Path)
+	reply.IsDir = isDir
+	reply.Length = length
+	reply.Chunks = chunks
+	reply.Error = err
+
 	return nil
 }
 
@@ -165,19 +178,22 @@ func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoR
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
 	if err := m.nm.Create(args.Path); err == nil || err == gfs.ErrFileExists {
-		log.Infof("RPCGetChunkHandle, file[%s], err[%s]", args.Path, err)
+		log.Infof("RPCGetChunkHandle, file[%s], err[%v]", args.Path, err)
 	} else {
-		return err
+		reply.Error = err
+		return nil
 	}
 
 	dirParts, leafName, err := m.nm.dirAndLeafName(args.Path)
 	if err != nil {
-		return err
+		reply.Error = err
+		return nil
 	}
 
 	parentNode, err := m.nm.lockParents(dirParts)
 	if err != nil {
-		return err
+		reply.Error = err
+		return nil
 	}
 
 	defer m.nm.unlockParents(dirParts)
@@ -187,13 +203,15 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 	fileNode, ok := parentNode.children[leafName]
 	if !ok {
-		log.Errorf("RPCGetChunkHandle, file[%s], err[%s]", args.Path, gfs.ErrFileNotExists)
-		return gfs.ErrFileNotExists
+		log.Errorf("RPCGetChunkHandle, file[%s], err[%v]", args.Path, gfs.ErrFileNotExists)
+		reply.Error = gfs.ErrFileNotExists
+		return nil
 	}
 
 	if fileNode.isDir {
-		log.Errorf("RPCGetChunkHandle, path[%s], err[%s]", args.Path, gfs.ErrPathIsNotFile)
-		return gfs.ErrPathIsNotFile
+		log.Errorf("RPCGetChunkHandle, path[%s], err[%v]", args.Path, gfs.ErrPathIsNotFile)
+		reply.Error = gfs.ErrPathIsNotFile
+		return nil
 	}
 
 	fileNode.Lock()
@@ -203,34 +221,39 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 		ch, err := m.cm.GetChunk(args.Path, args.Index)
 
 		if err != nil {
-			log.Errorf("RPCGetChunkHandle, err[%s]", err)
-			return err
+			log.Errorf("RPCGetChunkHandle, err[%v]", err)
+			reply.Error = err
+			return nil
 		}
 
 		reply.Handle = ch
 		return nil
 	} else if int64(args.Index) > fileNode.chunks {
-		log.Errorf("RPCGetChunkHandle, err[%s]", gfs.ErrDiscontinuousChunk)
-		return gfs.ErrDiscontinuousChunk
+		log.Errorf("RPCGetChunkHandle, err[%v]", gfs.ErrCreateDiscontinuousChunk)
+		reply.Error = gfs.ErrCreateDiscontinuousChunk
+		return nil
 	}
 
 	fileNode.chunks++
 
 	servers, err := m.csm.ChooseServers(gfs.DefaultNumReplicas)
 	if err != nil {
-		log.Errorf("RPCGetChunkHandle, err[%s]", err)
-		return err
+		log.Errorf("RPCGetChunkHandle, err[%v]", err)
+		reply.Error = err
+		return nil
 	}
 
 	handle, err := m.cm.CreateChunk(args.Path, servers)
 	if err != nil {
-		log.Errorf("RPCGetChunkHandle, err[%s]", err)
-		return err
+		log.Errorf("RPCGetChunkHandle, err[%v]", err)
+		reply.Error = err
+		return nil
 	}
 
 	if err := m.csm.AddChunk(servers, handle); err != nil {
-		log.Errorf("RPCGetChunkHandle, err[%s]", err)
-		return err
+		log.Errorf("RPCGetChunkHandle, err[%v]", err)
+		reply.Error = err
+		return nil
 	}
 
 	reply.Handle = handle
@@ -242,5 +265,6 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 func (m *Master) RPCList(args gfs.ListArg, reply *gfs.ListReply) error {
 	pathInfo, err := m.nm.List(args.Path)
 	reply.Files = pathInfo
-	return err
+	reply.Error = err
+	return nil
 }

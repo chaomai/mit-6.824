@@ -48,33 +48,36 @@ func errorAll(ch chan error, n int, t *testing.T) {
  *  TEST SUITE 1 - Basic File Operation
  */
 func TestCreateFile(t *testing.T) {
-	err := m.RPCCreateFile(gfs.CreateFileArg{"/test1.txt"}, &gfs.CreateFileReply{})
+	reply := gfs.CreateFileReply{}
+	err := m.RPCCreateFile(gfs.CreateFileArg{"/test1.txt"}, &reply)
 	if err != nil {
 		t.Error(err)
 	}
-	err = m.RPCCreateFile(gfs.CreateFileArg{"/test1.txt"}, &gfs.CreateFileReply{})
-	if err == nil {
+	err = m.RPCCreateFile(gfs.CreateFileArg{"/test1.txt"}, &reply)
+	if err == nil && reply.Error != gfs.ErrFileExists {
 		t.Error("the same file has been created twice")
 	}
 }
 
 func TestMkdirDeleteList(t *testing.T) {
+	mkReply := gfs.MkdirReply{}
+	cfReply := gfs.CreateFileReply{}
 	ch := make(chan error, 9)
-	ch <- m.RPCMkdir(gfs.MkdirArg{"/dir1"}, &gfs.MkdirReply{})
-	ch <- m.RPCMkdir(gfs.MkdirArg{"/dir2"}, &gfs.MkdirReply{})
-	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/file1.txt"}, &gfs.CreateFileReply{})
-	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/file2.txt"}, &gfs.CreateFileReply{})
-	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir1/file3.txt"}, &gfs.CreateFileReply{})
-	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir1/file4.txt"}, &gfs.CreateFileReply{})
-	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir2/file5.txt"}, &gfs.CreateFileReply{})
+	ch <- m.RPCMkdir(gfs.MkdirArg{"/dir1"}, &mkReply)
+	ch <- m.RPCMkdir(gfs.MkdirArg{"/dir2"}, &mkReply)
+	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/file1.txt"}, &cfReply)
+	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/file2.txt"}, &cfReply)
+	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir1/file3.txt"}, &cfReply)
+	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir1/file4.txt"}, &cfReply)
+	ch <- m.RPCCreateFile(gfs.CreateFileArg{"/dir2/file5.txt"}, &cfReply)
 
-	err := m.RPCCreateFile(gfs.CreateFileArg{"/dir2/file5.txt"}, &gfs.CreateFileReply{})
-	if err == nil {
+	err := m.RPCCreateFile(gfs.CreateFileArg{"/dir2/file5.txt"}, &cfReply)
+	if err == nil && cfReply.Error != gfs.ErrFileExists {
 		t.Error("the same file has been created twice")
 	}
 
-	err = m.RPCMkdir(gfs.MkdirArg{"/dir1"}, &gfs.MkdirReply{})
-	if err == nil {
+	err = m.RPCMkdir(gfs.MkdirArg{"/dir1"}, &mkReply)
+	if err == nil && mkReply.Error != gfs.ErrDirectoryExists {
 		t.Error("the same dirctory has been created twice")
 	}
 
@@ -123,7 +126,7 @@ func TestRPCGetChunkHandle(t *testing.T) {
 	}
 
 	err = m.RPCGetChunkHandle(gfs.GetChunkHandleArg{path, 2}, &r2)
-	if err == nil {
+	if err == nil && r2.Error != gfs.ErrCreateDiscontinuousChunk {
 		t.Error("discontinuous chunk should not be created")
 	}
 }
@@ -180,8 +183,7 @@ func checkReplicas(handle gfs.ChunkHandle, length int, t *testing.T) int {
 	args := gfs.ReadChunkArg{handle, 0, length}
 	for _, addr := range l.Locations {
 		var r gfs.ReadChunkReply
-		err := util.Call(addr, "ChunkServer.RPCReadChunk", args, &r)
-		if err == nil {
+		if errx := util.Call(addr, "ChunkServer.RPCReadChunk", args, &r); errx == nil && r.Error == nil {
 			data = append(data, r.Data)
 			// fmt.Println("find in ", addr)
 		}
