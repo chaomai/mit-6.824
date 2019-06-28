@@ -1,6 +1,7 @@
 package chunkserver
 
 import (
+	"io"
 	"net"
 	"net/rpc"
 	"os"
@@ -283,7 +284,11 @@ func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkR
 	reply.Length = args.Length
 	n, err := fp.ReadAt(reply.Data, int64(args.Offset))
 
-	if err != nil {
+	if err == io.EOF {
+		reply.Error = gfs.ErrReadEOF
+		log.Warnf("RPCReadChunk, err[%v]", reply.Error)
+		return nil
+	} else if err != nil {
 		reply.Error = gfs.NewErrorf("read file err[%v]", err)
 		log.Errorf("RPCReadChunk, err[%v]", reply.Error)
 		return nil
@@ -295,7 +300,7 @@ func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkR
 		return nil
 	}
 
-	log.Infof("RPCReadChunk, read[%s] data[%v] bufferLen[%v]", chunkPath, reply.Data, args.Length)
+	log.Infof("RPCReadChunk, read[%s], bufferLen[%v]", chunkPath, args.Length)
 
 	return nil
 }
@@ -443,10 +448,21 @@ func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo) (o
 	}
 
 	dataLen := len(data)
-	if int64(args.Offset)+int64(dataLen) > gfs.MaxChunkSize {
+	if args.Offset+gfs.Offset(dataLen) > gfs.Offset(gfs.MaxChunkSize) {
 		err = gfs.ErrWriteExceedChunkSize
 		log.Errorf("applyWrite, err[%v]", err)
 		return
+	}
+
+	if args.Offset > info.length {
+		log.Infof("applyWrite, pad chunk, err[%v]", gfs.ErrWriteExceedFileSize)
+
+		padArgs := gfs.ApplyMutationArg{Mtype: gfs.MutationPad, Version: args.Version, DataID: args.DataID, Offset: args.Offset}
+		_, err = cs.applyPad(padArgs, info)
+		if err != nil {
+			log.Errorf("applyWrite, err[%v]", err)
+			return
+		}
 	}
 
 	if info.version != args.Version {
@@ -465,7 +481,7 @@ func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo) (o
 	}
 	defer fp.Close()
 
-	log.Infof("applyWrite, write[%s] data[%v] offset[%v]", chunkPath, data, args.Offset)
+	log.Infof("applyWrite, write[%s], offset[%v]", chunkPath, args.Offset)
 
 	n, err := fp.WriteAt(data, int64(args.Offset))
 	if err != nil {
@@ -498,7 +514,14 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 	}
 
 	if int64(info.length)+int64(dataLen) > gfs.MaxChunkSize {
-		// todo padchunk
+		padArgs := gfs.ApplyMutationArg{Mtype: gfs.MutationPad, Version: args.Version, DataID: args.DataID}
+		_, err = cs.applyPad(padArgs, info)
+
+		if err != nil {
+			log.Errorf("applyAppend, err[%v]", err)
+			return
+		}
+
 		err = gfs.ErrAppendExceedChunkSize
 		log.Errorf("applyAppend, err[%v]", err)
 		return
@@ -510,7 +533,7 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 		return
 	}
 
-	offset = gfs.Offset(int64(gfs.MaxChunkSize)*int64(args.DataID.Handle)) + gfs.Offset(info.length)
+	offset = info.length
 	info.length = gfs.Offset(int64(info.length) + int64(dataLen))
 
 	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.DataID.Handle), 10))
@@ -539,6 +562,38 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 }
 
 func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo) (offset gfs.Offset, err error) {
+	var padLen gfs.Offset = 0
+
+	if args.Offset != 0 {
+		padLen = args.Offset - info.length
+	} else {
+		padLen = gfs.MaxChunkSize - info.length
+	}
+
+	info.length = info.length + padLen
+
+	padData := make([]byte, padLen)
+
+	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.DataID.Handle), 10))
+	fp, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Errorf("applyPad, err[%v]", err)
+		return
+	}
+	defer fp.Close()
+
+	n, err := fp.Write(padData)
+	if err != nil {
+		log.Errorf("applyPad, err[%v]", err)
+		return
+	}
+
+	if gfs.Offset(n) != padLen {
+		err = gfs.ErrWriteIncomplete
+		log.Errorf("applyPad, err[%v]", err)
+		return
+	}
+
 	return
 }
 

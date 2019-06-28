@@ -205,12 +205,15 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (h
 		cInfo.location.Add(addr)
 	}
 
-	fInfo := new(fileInfo)
-	fInfo.handles = append(fInfo.handles, handle)
-
 	cm.numChunkHandle = handle + 1
 	cm.chunk[handle] = cInfo
-	cm.file[path] = fInfo
+
+	if _, ok := cm.file[path]; !ok {
+		cm.file[path] = new(fileInfo)
+	}
+
+	fInfo := cm.file[path]
+	fInfo.handles = append(fInfo.handles, handle)
 
 	return
 }

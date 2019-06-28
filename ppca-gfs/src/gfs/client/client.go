@@ -1,6 +1,8 @@
 package client
 
 import (
+	"math"
+
 	"gfs"
 	"gfs/util"
 
@@ -74,24 +76,129 @@ func (c *Client) List(path gfs.Path) (files []gfs.PathInfo, err error) {
 	return
 }
 
+func (c *Client) getOffsetChunkIndex(offset gfs.Offset) gfs.ChunkIndex {
+	// offset start from zero, so add 1 before performing calculation
+	return gfs.ChunkIndex(math.Floor(float64(offset+1) / float64(gfs.MaxChunkSize)))
+}
+
 // Read reads the file at specific offset.
 // It reads up to len(data) bytes form the File.
 // It return the number of bytes, and an error if any.
 func (c *Client) Read(path gfs.Path, offset gfs.Offset, data []byte) (n int, err error) {
-	// rpcArgs := gfs.GetFileInfoArg{Path: path}
-	// rpcReply := new(gfs.GetFileInfoReply)
-	// err = util.Call(c.master, "Master.RPCGetFileInfo", rpcArgs, rpcReply)
-	// if err != nil {
-	// 	log.Errorf("Read, err[%v]", err)
-	// 	return
-	// }
+	rpcArgs := gfs.GetFileInfoArg{Path: path}
+	rpcReply := new(gfs.GetFileInfoReply)
+	if errx := util.Call(c.master, "Master.RPCGetFileInfo", rpcArgs, rpcReply); errx != nil {
+		err = errx
+		log.Errorf("Read, call err[%v]", err)
+		return
+	} else if rpcReply.Error != nil {
+		err = rpcReply.Error
+		log.Errorf("Read, err[%v]", err)
+		return
+	}
+
+	readOffset := offset
+	for {
+		readOffsetChunkIdx := c.getOffsetChunkIndex(readOffset)
+
+		var handle gfs.ChunkHandle
+		handle, errx := c.GetChunkHandle(path, readOffsetChunkIdx)
+		if errx != nil {
+			err = errx
+			log.Errorf("Read, err[%v]", err)
+			return
+		}
+
+		fileOffset := readOffset - gfs.Offset(readOffsetChunkIdx)*gfs.MaxChunkSize
+
+		var readLen gfs.Offset
+		if fileOffset+gfs.Offset(len(data)) > gfs.MaxChunkSize {
+			readLen = gfs.Offset(gfs.MaxChunkSize - fileOffset)
+		} else {
+			readLen = gfs.Offset(len(data))
+		}
+
+		nRead, errx := c.ReadChunk(handle, fileOffset, data[0:readLen])
+		readOffset += gfs.Offset(nRead)
+		n += nRead
+
+		if errx == gfs.ErrReadEOF {
+			err = errx
+			log.Warnf("Read, err[%v]", err)
+			return
+		} else if errx != nil {
+			err = errx
+			log.Errorf("Read, err[%v]", err)
+			return
+		}
+
+		data = data[nRead:]
+
+		if len(data) == 0 {
+			break
+		}
+	}
 
 	return
 }
 
 // Write writes data to the file at specific offset.
-func (c *Client) Write(path gfs.Path, offset gfs.Offset, data []byte) (err error) {
-	return
+func (c *Client) Write(path gfs.Path, offset gfs.Offset, data []byte) error {
+	rpcArgs := gfs.GetFileInfoArg{Path: path}
+	rpcReply := new(gfs.GetFileInfoReply)
+	if err := util.Call(c.master, "Master.RPCGetFileInfo", rpcArgs, rpcReply); err != nil {
+		log.Errorf("Write, call err[%v]", err)
+		return err
+	} else if rpcReply.Error != nil {
+		log.Errorf("Write, err[%v]", rpcReply.Error)
+		return rpcReply.Error
+	}
+
+	var maxChunkIdx gfs.ChunkIndex = 0
+	if rpcReply.Chunks != 0 {
+		maxChunkIdx = gfs.ChunkIndex(rpcReply.Chunks - 1)
+	}
+
+	writeOffset := offset
+	for {
+		var handle gfs.ChunkHandle
+		handle, err := c.GetChunkHandle(path, maxChunkIdx)
+		if err != nil {
+			log.Errorf("Write, err[%v]", err)
+			return err
+		}
+
+		if c.getOffsetChunkIndex(writeOffset) > maxChunkIdx {
+			maxChunkIdx++
+			continue
+		}
+
+		fileOffset := writeOffset - gfs.Offset(maxChunkIdx)*gfs.MaxChunkSize
+
+		var writeLen gfs.Offset
+		if fileOffset+gfs.Offset(len(data)) > gfs.MaxChunkSize {
+			writeLen = gfs.Offset(gfs.MaxChunkSize - fileOffset)
+		} else {
+			writeLen = gfs.Offset(len(data))
+		}
+
+		log.Infof("Write, handle[%v], fileOffset[%v], writeLen[%v]", handle, fileOffset, writeLen)
+
+		err = c.WriteChunk(handle, fileOffset, data[0:writeLen])
+		if err != nil {
+			log.Errorf("Write, err[%v]", err)
+			return err
+		}
+
+		data = data[writeLen:]
+		writeOffset += writeLen
+
+		if len(data) == 0 {
+			break
+		}
+	}
+
+	return nil
 }
 
 // Append appends data to the file. Offset of the beginning of appended data is returned.
@@ -109,30 +216,27 @@ func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err erro
 	}
 
 	var curChunkIndex int64 = 0
-	if rpcReply.Chunks == 0 {
-		curChunkIndex = 0
-	} else {
+	if rpcReply.Chunks != 0 {
 		curChunkIndex = rpcReply.Chunks - 1
 	}
 
-	handle, err := c.GetChunkHandle(path, gfs.ChunkIndex(curChunkIndex))
-	if err != nil {
-		log.Errorf("Append, err[%v]", err)
-		return
-	}
-
+	// todo split data to append
 	for {
-		offset, err = c.AppendChunk(handle, data)
+		var handle gfs.ChunkHandle
+		handle, err = c.GetChunkHandle(path, gfs.ChunkIndex(curChunkIndex))
+		if err != nil {
+			log.Errorf("Append, err[%v]", err)
+			return
+		}
+
+		var cOffset gfs.Offset
+		cOffset, err = c.AppendChunk(handle, data)
 		if err == nil {
+			offset = gfs.Offset(curChunkIndex*gfs.MaxChunkSize) + cOffset
 			break
 		} else if err == gfs.ErrAppendExceedChunkSize {
 			log.Infof("Append, err[%v]", err)
 			curChunkIndex++
-			handle, err = c.GetChunkHandle(path, gfs.ChunkIndex(curChunkIndex))
-			if err != nil {
-				log.Errorf("Append, err[%v]", err)
-				return
-			}
 		} else {
 			log.Errorf("Append, err[%v]", err)
 			return
@@ -162,8 +266,14 @@ func (c *Client) GetChunkHandle(path gfs.Path, index gfs.ChunkIndex) (handle gfs
 }
 
 // ReadChunk reads data from the chunk at specific offset.
-// len(data)+offset  should be within chunk size.
+// len(data)+offset should be within chunk size.
 func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte) (n int, err error) {
+	if int64(offset)+int64(len(data)) > gfs.MaxChunkSize {
+		err = gfs.ErrReadExceedChunkSize
+		log.Errorf("ReadChunk, err[%v]", err)
+		return
+	}
+
 	rpcArgs := gfs.GetReplicasArg{Handle: handle}
 	rpcReply := new(gfs.GetReplicasReply)
 
@@ -189,22 +299,26 @@ func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byt
 	addr := rpcReply.Locations[idx]
 
 	var readLen int
-	if gfs.MaxChunkSize-offset > gfs.Offset(cap(data)) {
-		readLen = cap(data)
+	if gfs.MaxChunkSize-offset > gfs.Offset(len(data)) {
+		readLen = len(data)
 	} else {
 		readLen = int(gfs.MaxChunkSize - offset)
 	}
 
 	rpcRCArgs := gfs.ReadChunkArg{Handle: handle, Offset: offset, Length: readLen}
 	rpcRCReply := new(gfs.ReadChunkReply)
+	rpcRCReply.Data = make([]byte, readLen)
 
 	if errx := util.Call(addr, "ChunkServer.RPCReadChunk", rpcRCArgs, rpcRCReply); errx != nil {
 		log.Errorf("ReadChunk, call err[%v]", errx)
 		err = errx
 		return
-	} else if rpcReply.Error != nil {
-		log.Errorf("ReadChunk, err[%v]", rpcReply.Error)
-		err = rpcReply.Error
+	} else if rpcRCReply.Error == gfs.ErrReadEOF {
+		log.Warnf("ReadChunk, err[%v]", rpcRCReply.Error)
+		err = rpcRCReply.Error
+	} else if rpcRCReply.Error != nil {
+		log.Errorf("ReadChunk, err[%v]", rpcRCReply.Error)
+		err = rpcRCReply.Error
 		return
 	}
 
@@ -213,12 +327,6 @@ func (c *Client) ReadChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byt
 	}
 
 	n = rpcRCReply.Length
-
-	if n != len(data) {
-		err = gfs.ErrReadIncomplete
-		log.Errorf("ReadChunk, err[%v]", err)
-		return
-	}
 
 	return
 }

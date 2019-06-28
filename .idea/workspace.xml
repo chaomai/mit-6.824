@@ -3,15 +3,12 @@
   <component name="ChangeListManager">
     <list default="true" id="ea5572a8-b0b5-4978-891c-4b0c4dafc3a1" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/graybox_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/graybox_test.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/chunk_lease.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/chunk_lease.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver_test.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client_test.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/namesapce_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/namesapce_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/rpc_structs.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/rpc_structs.go" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -35,11 +32,29 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
+      <file pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/ppca-gfs/graybox_test.go">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="234">
+              <caret line="345" lean-forward="true" selection-start-line="345" selection-end-line="345" />
+            </state>
+          </provider>
+        </entry>
+      </file>
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="317">
-              <caret line="90" lean-forward="true" selection-start-line="90" selection-end-line="90" />
+            <state relative-caret-position="627">
+              <caret line="329" column="4" selection-start-line="329" selection-start-column="4" selection-end-line="329" selection-end-column="4" />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="180">
+              <caret line="253" selection-start-line="253" selection-end-line="253" />
             </state>
           </provider>
         </entry>
@@ -48,15 +63,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>RPCPushDataAndForward</find>
-      <find>ApplyMutationArg</find>
-      <find>log</find>
-      <find>RPCAppendChunk</find>
-      <find>RPCWriteChunk(</find>
-      <find>RPCGetPrimaryAndSecondaries</find>
-      <find>RPCReadChunk</find>
-      <find>RPCApplyMutation</find>
-      <find>dirAndFileName</find>
       <find>RPCCreateFile</find>
       <find>RPCGetChunkHandle</find>
       <find>]]</find>
@@ -75,9 +81,18 @@
       <find>err[%s]</find>
       <find>gfs.MkdirReply{}</find>
       <find>gfs.CreateFileReply{}</find>
-      <find>RPCWriteChunk</find>
-      <find>exce</find>
       <find>Error2</find>
+      <find>Write, handle</find>
+      <find>GetChunkHandle</find>
+      <find>ReadChunkArg</find>
+      <find>ReadChunk</find>
+      <find>exce</find>
+      <find>exceed</find>
+      <find>RPCReadChunk</find>
+      <find>cap(</find>
+      <find>err</find>
+      <find>writeat</find>
+      <find>RPCWriteChunk</find>
     </findStrings>
     <replaceStrings>
       <replace>Error</replace>
@@ -107,16 +122,18 @@
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/util/util.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/rpc_structs.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/client/chunk_lease.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/namesapce_manager.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/graybox_test.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs_stress/fault_tolerance.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs_stress/consistency_write_success.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs_stress/atomic_append_success.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client_test.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver_test.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/graybox_test.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" />
       </list>
     </option>
   </component>
@@ -141,7 +158,6 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
-      <pane id="Scope" />
       <pane id="ProjectPane">
         <subPane>
           <expand>
@@ -232,6 +248,7 @@
           <select />
         </subPane>
       </pane>
+      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
@@ -245,6 +262,7 @@
     <property name="last_opened_file_path" value="$PROJECT_DIR$" />
     <property name="nodejs_interpreter_path.stuck_in_default_project" value="undefined stuck path" />
     <property name="nodejs_npm_path_reset_for_default_project" value="true" />
+    <property name="nodejs_package_manager_path" value="npm" />
     <property name="settings.editor.selected.configurable" value="preferences.general" />
     <property name="settings.editor.splitter.proportion" value="0.2262324" />
   </component>
@@ -264,7 +282,7 @@
     <configuration name="TestAppendChunk in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestAppendChunk)$ -test.v" />
+      <parameters value="-test.timeout 120s -test.run ^(TestAppendChunk)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -272,10 +290,21 @@
       <pattern value="^TestCreateFile$" />
       <method v="2" />
     </configuration>
+    <configuration name="TestClient_getOffsetChunkIndex in gfs/client" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="mit-6.824" />
+      <working_directory value="$PROJECT_DIR$/ppca-gfs/src/gfs/client" />
+      <framework value="gotest" />
+      <kind value="PACKAGE" />
+      <package value="gfs/client" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/" />
+      <pattern value="^TestClient_getOffsetChunkIndex$" />
+      <method v="2" />
+    </configuration>
     <configuration name="TestCreateFile in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestCreateFile)$ -test.v" />
+      <parameters value="-test.timeout 120s -test.run ^(TestCreateFile)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -286,7 +315,7 @@
     <configuration name="TestMkdirDeleteList in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestMkdirDeleteList)$ -test.v" />
+      <parameters value="-test.timeout 120s -test.run ^(TestMkdirDeleteList)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -297,7 +326,7 @@
     <configuration name="TestPadOver in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestPadOver)$ -test.v" />
+      <parameters value="-test.timeout 120s -test.run ^(TestPadOver)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -308,7 +337,7 @@
     <configuration name="TestRPCGetChunkHandle in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestRPCGetChunkHandle)$ -test.v" />
+      <parameters value="-test.timeout 120s -test.run ^(TestRPCGetChunkHandle)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -319,7 +348,7 @@
     <configuration name="TestReadChunk in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestReadChunk)$ -test.v" />
+      <parameters value="-test.timeout 120s -test.run ^(TestReadChunk)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -330,7 +359,7 @@
     <configuration name="TestReplicaEquality in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestReplicaEquality)$ -test.v" />
+      <parameters value="-test.timeout 120s -test.run ^(TestReplicaEquality)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -338,10 +367,21 @@
       <pattern value="^TestCreateFile$" />
       <method v="2" />
     </configuration>
+    <configuration name="TestWrite in gfs/chunkserver" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="mit-6.824" />
+      <working_directory value="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver" />
+      <framework value="gotest" />
+      <kind value="PACKAGE" />
+      <package value="gfs/chunkserver" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/" />
+      <pattern value="^TestWrite$" />
+      <method v="2" />
+    </configuration>
     <configuration name="TestWriteChunk in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestWriteChunk)$ -test.v" />
+      <parameters value="-test.timeout 120s -test.run ^(TestWriteChunk)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -352,7 +392,7 @@
     <configuration name="TestWriteReadBigData in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
-      <parameters value="-test.timeout 30s -test.run ^(TestWriteReadBigData)$ -test.v" />
+      <parameters value="-test.timeout 600s -test.run ^(TestWriteReadBigData)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -370,37 +410,45 @@
       <item itemvalue="Go Test.TestAppendChunk in graybox_test.go" />
       <item itemvalue="Go Test.TestPadOver in graybox_test.go" />
       <item itemvalue="Go Test.TestWriteReadBigData in graybox_test.go" />
+      <item itemvalue="Go Test.TestWrite in gfs/chunkserver" />
+      <item itemvalue="Go Test.TestClient_getOffsetChunkIndex in gfs/client" />
     </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Go Test.TestWrite in gfs/chunkserver" />
+        <item itemvalue="Go Test.TestClient_getOffsetChunkIndex in gfs/client" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="TestHistory">
-    <history-entry file="TestPadOver_in_graybox_test_go - 2019.06.27 at 15h 31m 34s.xml">
-      <configuration name="TestPadOver in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 05m 06s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestPadOver_in_graybox_test_go - 2019.06.27 at 15h 33m 26s.xml">
-      <configuration name="TestPadOver in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 07m 06s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestPadOver_in_graybox_test_go - 2019.06.27 at 15h 34m 16s.xml">
-      <configuration name="TestPadOver in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 09m 46s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestPadOver_in_graybox_test_go - 2019.06.27 at 15h 35m 35s.xml">
-      <configuration name="TestPadOver in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 12m 48s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestReplicaEquality_in_graybox_test_go - 2019.06.27 at 15h 43m 39s.xml">
-      <configuration name="TestReplicaEquality in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 15m 04s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestAppendChunk_in_graybox_test_go - 2019.06.27 at 15h 43m 45s.xml">
-      <configuration name="TestAppendChunk in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 17m 32s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestPadOver_in_graybox_test_go - 2019.06.27 at 15h 44m 09s.xml">
-      <configuration name="TestPadOver in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 18m 48s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestPadOver_in_graybox_test_go - 2019.06.27 at 15h 44m 59s.xml">
-      <configuration name="TestPadOver in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 20m 03s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestPadOver_in_graybox_test_go - 2019.06.27 at 15h 48m 22s.xml">
-      <configuration name="TestPadOver in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 20m 37s.xml">
+      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
-    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.27 at 15h 49m 22s.xml">
+    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.06.28 at 14h 26m 05s.xml">
       <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
   </component>
@@ -417,12 +465,12 @@
     <frame x="0" y="23" width="1920" height="1057" extended-state="6" />
     <editor active="true" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" sideWeight="0.54545456" visible="true" weight="0.20500532" />
-      <window_info id="Structure" order="1" sideWeight="0.45454547" side_tool="true" visible="true" weight="0.20500532" />
+      <window_info content_ui="combo" id="Project" order="0" sideWeight="0.5433647" visible="true" weight="0.20926517" />
+      <window_info id="Structure" order="1" sideWeight="0.45663533" side_tool="true" visible="true" weight="0.20926517" />
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
       <window_info anchor="bottom" id="Find" order="1" weight="0.3291536" />
-      <window_info anchor="bottom" id="Run" order="2" weight="0.35214213" />
+      <window_info anchor="bottom" id="Run" order="2" sideWeight="0.49946752" weight="0.35214213" />
       <window_info anchor="bottom" id="Debug" order="3" weight="0.39916405" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
@@ -431,7 +479,7 @@
       <window_info anchor="bottom" id="Database Changes" order="8" />
       <window_info anchor="bottom" id="Version Control" order="9" weight="0.32912722" />
       <window_info anchor="bottom" id="Terminal" order="10" weight="0.32810867" />
-      <window_info anchor="bottom" id="Event Log" order="11" side_tool="true" />
+      <window_info anchor="bottom" id="Event Log" order="11" sideWeight="0.5005325" side_tool="true" weight="0.35214213" />
       <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
       <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
@@ -522,38 +570,10 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/client/client_test.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="408">
-          <caret line="17" lean-forward="true" selection-start-line="17" selection-end-line="17" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/../../goland_projects/go_sdk/go1.12.6/src/runtime/panic.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="180">
-          <caret line="689" selection-start-line="689" selection-end-line="689" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/rpc_structs.go">
       <provider selected="true" editor-type-id="text-editor">
         <state>
           <caret line="22" selection-start-line="22" selection-end-line="22" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/graybox_test.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="7536">
-          <caret line="314" column="13" selection-start-line="314" selection-start-column="13" selection-end-line="314" selection-end-column="13" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/common.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="2664">
-          <caret line="111" selection-start-line="111" selection-end-line="111" />
         </state>
       </provider>
     </entry>
@@ -571,13 +591,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="3696">
-          <caret line="154" column="17" selection-start-line="154" selection-start-column="17" selection-end-line="154" selection-end-column="17" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/namesapce_manager.go">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="3288">
@@ -585,24 +598,10 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="4776">
-          <caret line="199" column="44" selection-start-line="199" selection-start-column="44" selection-end-line="199" selection-end-column="44" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="1416">
           <caret line="59" selection-start-line="59" selection-end-line="59" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="12576">
-          <caret line="524" selection-start-line="524" selection-end-line="524" />
         </state>
       </provider>
     </entry>
@@ -627,10 +626,73 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/../../goland_projects/go_sdk/go1.12.6/src/runtime/panic.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="180">
+          <caret line="689" selection-start-line="689" selection-end-line="689" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="804">
+          <caret line="219" lean-forward="true" selection-start-line="219" selection-end-line="219" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1142">
+          <caret line="244" lean-forward="true" selection-start-line="244" selection-end-line="244" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/client/client_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="600">
+          <caret line="25" lean-forward="true" selection-start-line="25" selection-end-line="25" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="493">
+          <caret line="55" lean-forward="true" selection-start-line="55" selection-end-line="55" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/common.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="371">
+          <caret line="54" column="4" selection-start-line="54" selection-start-column="4" selection-end-line="54" selection-end-column="4" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/../../goland_projects/go_sdk/go1.12.6/src/runtime/asm_amd64.s">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="180">
+          <caret line="519" selection-start-line="519" selection-end-line="519" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="180">
+          <caret line="253" selection-start-line="253" selection-end-line="253" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/graybox_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="234">
+          <caret line="345" lean-forward="true" selection-start-line="345" selection-end-line="345" />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="317">
-          <caret line="90" lean-forward="true" selection-start-line="90" selection-end-line="90" />
+        <state relative-caret-position="627">
+          <caret line="329" column="4" selection-start-line="329" selection-start-column="4" selection-end-line="329" selection-end-column="4" />
         </state>
       </provider>
     </entry>

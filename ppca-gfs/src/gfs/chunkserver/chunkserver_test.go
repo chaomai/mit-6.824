@@ -2,6 +2,7 @@ package chunkserver
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -43,6 +44,15 @@ func TestWrite(t *testing.T) {
 	}
 
 	printContents()
+
+	buf := make([]byte, 8)
+	if n, err := f.ReadAt(buf, 5); err == io.EOF {
+		t.Log(buf)
+		t.Log(n)
+		t.Log(err)
+	} else if err != nil {
+		panic(err)
+	}
 
 	os.Remove(filename)
 }
