@@ -96,8 +96,8 @@ type CSChunkInfo struct {
 // system config
 const (
 	// TODO for debug
-	// LeaseExpire = 1 * time.Minute
-	LeaseExpire        = 2 * time.Second
+	LeaseExpire = 100 * time.Minute
+	// LeaseExpire        = 2 * time.Second
 	HeartbeatInterval  = 100 * time.Millisecond
 	BackgroundInterval = 200 * time.Millisecond //
 	ServerTimeout      = 1 * time.Second        //
@@ -108,8 +108,9 @@ const (
 	DefaultNumReplicas = 3
 	MinimumNumReplicas = 2
 
-	DownloadBufferExpire = 2 * time.Minute
-	DownloadBufferTick   = 10 * time.Second
+	DownloadBufferExpire = 100 * time.Minute
+	// DownloadBufferExpire = 2 * time.Minute
+	DownloadBufferTick = 10 * time.Second
 )
 
 func init() {

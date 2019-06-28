@@ -217,7 +217,7 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 	fileNode.Lock()
 	defer fileNode.Unlock()
 
-	if int64(args.Index) < fileNode.chunks {
+	if args.Index < gfs.ChunkIndex(fileNode.chunks) {
 		ch, err := m.cm.GetChunk(args.Path, args.Index)
 
 		if err != nil {
@@ -228,7 +228,7 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 		reply.Handle = ch
 		return nil
-	} else if int64(args.Index) > fileNode.chunks {
+	} else if args.Index > gfs.ChunkIndex(fileNode.chunks) {
 		log.Errorf("RPCGetChunkHandle, err[%v]", gfs.ErrCreateDiscontinuousChunk)
 		reply.Error = gfs.ErrCreateDiscontinuousChunk
 		return nil

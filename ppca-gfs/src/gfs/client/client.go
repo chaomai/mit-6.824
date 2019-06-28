@@ -215,31 +215,46 @@ func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err erro
 		return
 	}
 
-	var curChunkIndex int64 = 0
+	var maxChunkIdx gfs.ChunkIndex = 0
 	if rpcReply.Chunks != 0 {
-		curChunkIndex = rpcReply.Chunks - 1
+		maxChunkIdx = gfs.ChunkIndex(rpcReply.Chunks - 1)
 	}
 
-	// todo split data to append
+	isSet := false
+
 	for {
 		var handle gfs.ChunkHandle
-		handle, err = c.GetChunkHandle(path, gfs.ChunkIndex(curChunkIndex))
+		handle, err = c.GetChunkHandle(path, maxChunkIdx)
 		if err != nil {
+			log.Errorf("Write, err[%v]", err)
+			return
+		}
+
+		appendLen := gfs.MaxAppendSize
+		if appendLen > len(data) {
+			appendLen = len(data)
+		}
+
+		var cOffset gfs.Offset
+		cOffset, err = c.AppendChunk(handle, data[0:appendLen])
+		if err == nil {
+			if !isSet {
+				offset = gfs.Offset(maxChunkIdx*gfs.MaxChunkSize) + cOffset
+				isSet = true
+			}
+		} else if err == gfs.ErrAppendExceedChunkSize {
+			log.Infof("Append, err[%v]", err)
+			maxChunkIdx++
+			continue
+		} else {
 			log.Errorf("Append, err[%v]", err)
 			return
 		}
 
-		var cOffset gfs.Offset
-		cOffset, err = c.AppendChunk(handle, data)
-		if err == nil {
-			offset = gfs.Offset(curChunkIndex*gfs.MaxChunkSize) + cOffset
+		data = data[appendLen:]
+
+		if len(data) == 0 {
 			break
-		} else if err == gfs.ErrAppendExceedChunkSize {
-			log.Infof("Append, err[%v]", err)
-			curChunkIndex++
-		} else {
-			log.Errorf("Append, err[%v]", err)
-			return
 		}
 	}
 

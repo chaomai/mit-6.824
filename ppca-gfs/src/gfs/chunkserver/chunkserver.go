@@ -284,6 +284,8 @@ func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkR
 	reply.Length = args.Length
 	n, err := fp.ReadAt(reply.Data, int64(args.Offset))
 
+	reply.Length = n
+
 	if err == io.EOF {
 		reply.Error = gfs.ErrReadEOF
 		log.Warnf("RPCReadChunk, err[%v]", reply.Error)
@@ -386,7 +388,8 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 
 	var offset gfs.Offset = 0
 
-	go func() {
+	// go
+	func() {
 		var err error
 		offset, err = cs.applyMutation(rpcArgs, info)
 		if err != nil {
@@ -563,7 +566,6 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 
 func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo) (offset gfs.Offset, err error) {
 	var padLen gfs.Offset = 0
-
 	if args.Offset != 0 {
 		padLen = args.Offset - info.length
 	} else {

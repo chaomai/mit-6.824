@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -33,7 +32,7 @@ var (
 const (
 	mAdd  = ":7777"
 	csNum = 5
-	N     = 10
+	N = 10
 )
 
 func errorAll(ch chan error, n int, t *testing.T) {
@@ -344,6 +343,106 @@ func TestWriteReadBigData(t *testing.T) {
 	errorAll(ch, 4, t)
 }
 
+func TestAppendReadBigData(t *testing.T) {
+	p := gfs.Path("/bigData.txt")
+
+	ch := make(chan error, 3)
+	ch <- c.Create(p)
+
+	size := gfs.MaxChunkSize * 3
+	expected := make([]byte, size)
+	for i := 0; i < size; i++ {
+		expected[i] = byte(i%26 + 'a')
+	}
+
+	// append large data
+	offset, err := c.Append(p, expected)
+	ch <- err
+	t.Log(offset)
+
+	// read
+	buf := make([]byte, size)
+	n, err := c.Read(p, 0, buf)
+	ch <- err
+
+	if n != size {
+		t.Error("read counter is wrong")
+	}
+	if !reflect.DeepEqual(expected, buf) {
+		t.Error("read wrong data")
+	}
+
+	errorAll(ch, 2, t)
+}
+
+func TestConcurrentAppendReadBigData(t *testing.T) {
+	p := make([]gfs.Path, 0)
+	for i := 0; i < N; i++ {
+		p = append(p, gfs.Path(fmt.Sprintf("/data%d.txt", i)))
+	}
+
+	ch := make(chan error, N*3)
+
+	for _, l := range p {
+		ch <- c.Create(l)
+	}
+
+	expected := make([][]byte, N)
+
+	for i := range p {
+		size := gfs.MaxChunkSize * (i + 1)
+		expected[i] = make([]byte, size)
+		for j := 0; j < size; j++ {
+			expected[i][j] = byte(j%26 + 'a')
+		}
+	}
+
+	// concurrent append data
+	wg1 := new(sync.WaitGroup)
+	wg1.Add(N)
+
+	for i := range p {
+		go func(idx int) {
+			_, err := c.Append(p[idx], expected[idx])
+			ch <- err
+
+			wg1.Done()
+		}(i)
+	}
+
+	wg1.Wait()
+
+	// read
+	wg2 := new(sync.WaitGroup)
+	wg2.Add(N)
+	for i := range p {
+		go func(idx int) {
+			size := gfs.MaxChunkSize * (idx + 1)
+			buf := make([]byte, size)
+			n, err := c.Read(p[idx], 0, buf)
+
+			if err != nil && err != gfs.ErrReadEOF {
+				ch <- err
+			} else {
+				ch <- nil
+			}
+
+			if n != size {
+				t.Error("read counter is wrong")
+			}
+			if !reflect.DeepEqual(expected[idx], buf) {
+				t.Error("read wrong data", p[idx])
+			}
+
+			wg2.Done()
+		}(i)
+	}
+
+	wg2.Wait()
+
+	errorAll(ch, N*3, t)
+}
+
 type Counter struct {
 	sync.Mutex
 	ct int
@@ -356,7 +455,7 @@ func (ct *Counter) Next() int {
 	return ct.ct - 1
 }
 
-// a concurrent producer-consumer number collector for testing race contiditon
+// a concurrent producer-consumer number collector for testing race condition
 func TestComprehensiveOperation(t *testing.T) {
 	createTick := 100 * time.Millisecond
 
@@ -421,6 +520,7 @@ func TestComprehensiveOperation(t *testing.T) {
 
 	go func() {
 		wg0.Wait()
+		fmt.Println("close line[0]")
 		close(line[0])
 	}()
 
@@ -448,6 +548,7 @@ func TestComprehensiveOperation(t *testing.T) {
 
 	go func() {
 		wg1.Wait()
+		fmt.Println("close line[2]")
 		close(line[2])
 	}()
 
@@ -465,7 +566,7 @@ func TestComprehensiveOperation(t *testing.T) {
 				lock2.RUnlock()
 				buf := make([]byte, 10000) // large enough
 				n, err := c.Read(p, gfs.Offset(pos), buf)
-				if err != nil && err != io.EOF {
+				if err != nil && err != gfs.ErrReadEOF {
 					t.Error(err)
 				}
 				if n == 0 {
@@ -492,7 +593,7 @@ func TestComprehensiveOperation(t *testing.T) {
 		}(i)
 	}
 
-	// wait to test race contition
+	// wait to test race condition
 	fmt.Println("###### Continue life for the elder to pass a long time test...")
 	for i := 0; i < 6; i++ {
 		fmt.Print(" +1s ")
