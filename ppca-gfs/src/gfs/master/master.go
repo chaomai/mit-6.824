@@ -82,7 +82,7 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 		}
 	}()
 
-	log.Infof("Master is running now. addr = %v, root path = %v", address, serverRoot)
+	log.Infof("master[%v], Master is running now. addr = %v, root path = %v", address, address, serverRoot)
 
 	return m
 }
@@ -121,11 +121,11 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 
 	if err != nil {
 		reply.Error = err
-		log.Errorf("RPCGetPrimaryAndSecondaries, err[%v]", err)
+		log.Errorf("master[%v], RPCGetPrimaryAndSecondaries, err[%v]", m.address, err)
 		return nil
 	}
 
-	log.Infof("RPCGetPrimaryAndSecondaries, lease[%+v]", l)
+	log.Infof("master[%v], RPCGetPrimaryAndSecondaries, lease[%+v]", m.address, l)
 	reply.Primary = l.Primary
 	reply.Secondaries = l.Secondaries
 	reply.Expire = l.Expire
@@ -139,7 +139,7 @@ func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasR
 	loc, err := m.cm.GetReplicas(args.Handle)
 	if err != nil {
 		reply.Error = err
-		log.Errorf("RPCGetReplicas, err[%v]", err)
+		log.Errorf("master[%v], RPCGetReplicas, err[%v]", m.address, err)
 		return nil
 	}
 
@@ -178,7 +178,7 @@ func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoR
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
 	if err := m.nm.Create(args.Path); err == nil || err == gfs.ErrFileExists {
-		log.Infof("RPCGetChunkHandle, file[%s], err[%v]", args.Path, err)
+		log.Infof("master[%v], RPCGetChunkHandle, file[%s], err[%v]", m.address, args.Path, err)
 	} else {
 		reply.Error = err
 		return nil
@@ -190,26 +190,23 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 		return nil
 	}
 
-	parentNode, err := m.nm.lockParents(dirParts)
+	parentNode, err := m.nm.lockParents(dirParts, true)
 	if err != nil {
 		reply.Error = err
 		return nil
 	}
 
-	defer m.nm.unlockParents(dirParts)
-
-	parentNode.RLock()
-	defer parentNode.RUnlock()
+	defer m.nm.unlockParents(dirParts, true)
 
 	fileNode, ok := parentNode.children[leafName]
 	if !ok {
-		log.Errorf("RPCGetChunkHandle, file[%s], err[%v]", args.Path, gfs.ErrFileNotExists)
+		log.Errorf("master[%v], RPCGetChunkHandle, file[%s], err[%v]", m.address, args.Path, gfs.ErrFileNotExists)
 		reply.Error = gfs.ErrFileNotExists
 		return nil
 	}
 
 	if fileNode.isDir {
-		log.Errorf("RPCGetChunkHandle, path[%s], err[%v]", args.Path, gfs.ErrPathIsNotFile)
+		log.Errorf("master[%v], RPCGetChunkHandle, path[%s], err[%v]", m.address, args.Path, gfs.ErrPathIsNotFile)
 		reply.Error = gfs.ErrPathIsNotFile
 		return nil
 	}
@@ -221,7 +218,7 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 		ch, err := m.cm.GetChunk(args.Path, args.Index)
 
 		if err != nil {
-			log.Errorf("RPCGetChunkHandle, err[%v]", err)
+			log.Errorf("master[%v], RPCGetChunkHandle, err[%v]", m.address, err)
 			reply.Error = err
 			return nil
 		}
@@ -229,7 +226,7 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 		reply.Handle = ch
 		return nil
 	} else if args.Index > gfs.ChunkIndex(fileNode.chunks) {
-		log.Errorf("RPCGetChunkHandle, err[%v]", gfs.ErrCreateDiscontinuousChunk)
+		log.Errorf("master[%v], RPCGetChunkHandle, err[%v]", m.address, gfs.ErrCreateDiscontinuousChunk)
 		reply.Error = gfs.ErrCreateDiscontinuousChunk
 		return nil
 	}
@@ -238,20 +235,20 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 	servers, err := m.csm.ChooseServers(gfs.DefaultNumReplicas)
 	if err != nil {
-		log.Errorf("RPCGetChunkHandle, err[%v]", err)
+		log.Errorf("master[%v], RPCGetChunkHandle, err[%v]", m.address, err)
 		reply.Error = err
 		return nil
 	}
 
 	handle, err := m.cm.CreateChunk(args.Path, servers)
 	if err != nil {
-		log.Errorf("RPCGetChunkHandle, err[%v]", err)
+		log.Errorf("master[%v], RPCGetChunkHandle, err[%v]", m.address, err)
 		reply.Error = err
 		return nil
 	}
 
 	if err := m.csm.AddChunk(servers, handle); err != nil {
-		log.Errorf("RPCGetChunkHandle, err[%v]", err)
+		log.Errorf("master[%v], RPCGetChunkHandle, err[%v]", m.address, err)
 		reply.Error = err
 		return nil
 	}

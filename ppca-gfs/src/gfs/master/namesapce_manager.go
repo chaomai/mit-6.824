@@ -53,7 +53,7 @@ func (nm *namespaceManager) dirAndLeafName(p gfs.Path) (dirParts []string, leafN
 	return
 }
 
-func (nm *namespaceManager) lockParents(dirParts []string) (parentNode *nsTree, err error) {
+func (nm *namespaceManager) lockParents(dirParts []string, isRLockParent bool) (parentNode *nsTree, err error) {
 	log.Infof("lockParents, lock path[%s]", dirParts)
 
 	curNode := nm.root
@@ -77,16 +77,29 @@ func (nm *namespaceManager) lockParents(dirParts []string) (parentNode *nsTree, 
 	}
 
 	parentNode = curNode
+
+	if isRLockParent {
+		parentNode.RLock()
+	} else {
+		parentNode.Lock()
+	}
+
 	return
 }
 
-func (nm *namespaceManager) unlockParents(dirParts []string) {
+func (nm *namespaceManager) unlockParents(dirParts []string, isRLockParent bool) {
 	parentPath := make([]*nsTree, 0)
 
 	curNode := nm.root
 	for _, dir := range dirParts {
 		parentPath = append(parentPath, curNode)
 		curNode = curNode.children[dir]
+	}
+
+	if isRLockParent {
+		curNode.RUnlock()
+	} else {
+		curNode.Unlock()
 	}
 
 	l := len(parentPath)
@@ -102,15 +115,11 @@ func (nm *namespaceManager) GetFileInfo(p gfs.Path) (isDir bool, length int64, c
 		return
 	}
 
-	parentNode, err := nm.lockParents(dirParts)
+	parentNode, err := nm.lockParents(dirParts, true)
 	if err != nil {
 		return
 	}
-
-	defer nm.unlockParents(dirParts)
-
-	parentNode.RLock()
-	defer parentNode.RUnlock()
+	defer nm.unlockParents(dirParts, true)
 
 	if _, ok := parentNode.children[leafName]; !ok {
 		err = gfs.ErrFileNotExists
@@ -136,15 +145,11 @@ func (nm *namespaceManager) Create(p gfs.Path) error {
 		return err
 	}
 
-	parentNode, err := nm.lockParents(dirParts)
+	parentNode, err := nm.lockParents(dirParts, false)
 	if err != nil {
 		return err
 	}
-
-	defer nm.unlockParents(dirParts)
-
-	parentNode.Lock()
-	defer parentNode.Unlock()
+	defer nm.unlockParents(dirParts, false)
 
 	if _, ok := parentNode.children[leafName]; ok {
 		log.Infof("Create, file[%s], err[%v]", p, gfs.ErrFileExists)
@@ -165,15 +170,11 @@ func (nm *namespaceManager) Mkdir(p gfs.Path) error {
 		return err
 	}
 
-	parentNode, err := nm.lockParents(dirParts)
+	parentNode, err := nm.lockParents(dirParts, false)
 	if err != nil {
 		return err
 	}
-
-	defer nm.unlockParents(dirParts)
-
-	parentNode.Lock()
-	defer parentNode.Unlock()
+	defer nm.unlockParents(dirParts, false)
 
 	if _, ok := parentNode.children[leafName]; ok {
 		log.Errorf("Mkdir, directory[%s] err[%v]", p, gfs.ErrDirectoryExists)
@@ -195,13 +196,11 @@ func (nm *namespaceManager) List(p gfs.Path) (r []gfs.PathInfo, err error) {
 	}
 
 	path := make([]string, 0)
-	root, err := nm.lockParents(path)
+	_, err = nm.lockParents(path, true)
 	if err != nil {
 		return
 	}
-
-	root.RLock()
-	defer root.RUnlock()
+	defer nm.unlockParents(path, true)
 
 	nodes := make([]node, 0)
 	nodes = append(nodes, node{"/", nm.root})

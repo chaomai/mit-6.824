@@ -3,6 +3,7 @@ package gfs
 import (
 	"encoding/gob"
 	"fmt"
+	"net"
 	"time"
 )
 
@@ -105,14 +106,16 @@ const (
 	MaxChunkSize  = 512 << 10 // 512KB DEBUG ONLY 64 << 20
 	MaxAppendSize = MaxChunkSize / 4
 
-	DefaultNumReplicas = 3
+	DefaultNumReplicas = 1
 	MinimumNumReplicas = 2
 
-	DownloadBufferExpire = 100 * time.Minute
-	// DownloadBufferExpire = 2 * time.Minute
+	DownloadBufferExpire = 2 * time.Minute
 	DownloadBufferTick = 10 * time.Second
+
+	ClientMaxRetry = 3
 )
 
 func init() {
 	gob.Register(ErrChunkExists)
+	gob.Register(net.OpError{})
 }
