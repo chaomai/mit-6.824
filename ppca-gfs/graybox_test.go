@@ -619,6 +619,11 @@ func TestComprehensiveOperation(t *testing.T) {
  *  TEST SUITE 3 - Fault Tolerance
  */
 
+func TestEmtpyOperation(t *testing.T) {
+	var i chan int
+	<-i
+}
+
 // Shutdown two chunk servers during appending
 func TestShutdownInAppend(t *testing.T) {
 	p := gfs.Path("/shutdown.txt")
@@ -889,7 +894,7 @@ func TestDiskError(t *testing.T) {
 // todo : simulate an extremely adverse condition
 
 func TestMain(tm *testing.M) {
-	log.SetLevel(log.DebugLevel)
+	// log.SetLevel(log.DebugLevel)
 	// log.SetLevel(log.ErrorLevel)
 
 	// create temporary directory

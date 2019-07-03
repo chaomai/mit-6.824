@@ -98,6 +98,9 @@ func (m *Master) Shutdown() {
 func (m *Master) BackgroundActivity() (err error) {
 	// dead chunkserver and reReplication
 	deadServers := m.csm.DetectDeadServers()
+	log.Infof("BackgroundActivity, deadServers[%v]", deadServers)
+	return
+
 	for _, deadAddr := range deadServers {
 		var deadCSHandles []gfs.ChunkHandle
 		deadCSHandles, err = m.csm.RemoveServer(deadAddr)

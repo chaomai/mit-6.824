@@ -2,49 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="ea5572a8-b0b5-4978-891c-4b0c4dafc3a1" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ppca-gfs/graybox_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/graybox_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/namesapce_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/namesapce_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/.travis.yml" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/.travis.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/CHANGELOG.md" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/CHANGELOG.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/alt_exit.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/alt_exit.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/alt_exit_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/alt_exit_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/doc.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/doc.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/entry.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/entry.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/entry_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/entry_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/examples/basic/basic.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/examples/hook/hook.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/exported.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/exported.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/formatter.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/formatter.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/formatter_bench_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/formatter_bench_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hook_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hook_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/syslog/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/syslog/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/syslog/syslog.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/syslog/syslog.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/syslog/syslog_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/syslog/syslog_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/test/test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/test/test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/test/test_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/hooks/test/test_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/json_formatter.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/json_formatter.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/json_formatter_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/json_formatter_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/logger.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/logger.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/logrus.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/logrus.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/logrus_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/logrus_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/terminal_bsd.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/terminal_linux.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/terminal_notwindows.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/terminal_solaris.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/terminal_windows.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/text_formatter.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/text_formatter.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/text_formatter_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/text_formatter_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/writer.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/github.com/Sirupsen/logrus/writer.go" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -77,11 +36,11 @@
           </provider>
         </entry>
       </file>
-      <file pinned="false" current-in-tab="false">
+      <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/ppca-gfs/graybox_test.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="707">
-              <caret line="657" lean-forward="true" selection-start-line="657" selection-end-line="657" />
+            <state relative-caret-position="545">
+              <caret line="897" selection-start-line="897" selection-end-line="897" />
             </state>
           </provider>
         </entry>
@@ -107,8 +66,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="811">
-              <caret line="147" lean-forward="true" selection-start-line="147" selection-end-line="147" />
+            <state relative-caret-position="102">
+              <caret line="94" lean-forward="true" selection-start-line="94" selection-end-line="94" />
             </state>
           </provider>
         </entry>
@@ -122,11 +81,11 @@
           </provider>
         </entry>
       </file>
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="714">
-              <caret line="87" lean-forward="true" selection-start-line="87" selection-end-line="87" />
+            <state relative-caret-position="285">
+              <caret line="131" lean-forward="true" selection-start-line="131" selection-end-line="131" />
             </state>
           </provider>
         </entry>
@@ -143,8 +102,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="766">
-              <caret line="659" lean-forward="true" selection-start-line="659" selection-end-line="659" />
+            <state relative-caret-position="-1254">
+              <caret line="32" lean-forward="true" selection-start-line="32" selection-end-line="32" />
             </state>
           </provider>
         </entry>
@@ -220,15 +179,15 @@
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver_test.go" />
         <option value="$PROJECT_DIR$/README.md" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/namesapce_manager.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/graybox_test.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/util/array_set.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/util/util.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/graybox_test.go" />
       </list>
     </option>
   </component>
@@ -344,7 +303,7 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Go Test.TestShutdownInAppend in graybox_test.go">
+  <component name="RunManager" selected="Go Test.TestEmtpyOperation in graybox_test.go">
     <configuration name="TestAppendChunk in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
@@ -393,6 +352,17 @@
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
       <parameters value="-test.timeout 30s -test.run ^(TestCreateFile)$ -test.v" />
+      <framework value="gotest" />
+      <kind value="FILE" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/ppca-gfs/graybox_test.go" />
+      <pattern value="^TestCreateFile$" />
+      <method v="2" />
+    </configuration>
+    <configuration name="TestEmtpyOperation in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
+      <module name="mit-6.824" />
+      <working_directory value="$PROJECT_DIR$/ppca-gfs" />
+      <parameters value="-test.timeout 30s -test.run ^(TestEmtpyOperation)$ -test.v" />
       <framework value="gotest" />
       <kind value="FILE" />
       <directory value="$PROJECT_DIR$/" />
@@ -489,6 +459,7 @@
       <method v="2" />
     </configuration>
     <list>
+      <item itemvalue="Go Test.TestEmtpyOperation in graybox_test.go" />
       <item itemvalue="Go Test.TestCreateFile in graybox_test.go" />
       <item itemvalue="Go Test.TestMkdirDeleteList in graybox_test.go" />
       <item itemvalue="Go Test.TestRPCGetChunkHandle in graybox_test.go" />
@@ -505,24 +476,6 @@
     </list>
   </component>
   <component name="TestHistory">
-    <history-entry file="TestShutdownInAppend_in_graybox_test_go - 2019.07.02 at 23h 05m 02s.xml">
-      <configuration name="TestShutdownInAppend in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestReadChunk_in_graybox_test_go - 2019.07.02 at 23h 28m 46s.xml">
-      <configuration name="TestReadChunk in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.07.02 at 23h 28m 58s.xml">
-      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestWriteReadBigData_in_graybox_test_go - 2019.07.02 at 23h 32m 54s.xml">
-      <configuration name="TestWriteReadBigData in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestShutdownInAppend_in_graybox_test_go - 2019.07.02 at 23h 33m 12s.xml">
-      <configuration name="TestShutdownInAppend in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestShutdownInAppend_in_graybox_test_go - 2019.07.02 at 23h 35m 37s.xml">
-      <configuration name="TestShutdownInAppend in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
     <history-entry file="TestShutdownInAppend_in_graybox_test_go - 2019.07.03 at 08h 28m 07s.xml">
       <configuration name="TestShutdownInAppend in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
@@ -534,6 +487,24 @@
     </history-entry>
     <history-entry file="TestShutdownInAppend_in_graybox_test_go - 2019.07.03 at 11h 46m 09s.xml">
       <configuration name="TestShutdownInAppend in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestShutdownInAppend_in_graybox_test_go - 2019.07.03 at 12h 39m 15s.xml">
+      <configuration name="TestShutdownInAppend in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestComprehensiveOperation_in_graybox_test_go - 2019.07.03 at 12h 48m 11s.xml">
+      <configuration name="TestComprehensiveOperation in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestComprehensiveOperation_in_graybox_test_go - 2019.07.03 at 12h 49m 07s.xml">
+      <configuration name="TestComprehensiveOperation in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestComprehensiveOperation_in_graybox_test_go - 2019.07.03 at 12h 49m 22s.xml">
+      <configuration name="TestComprehensiveOperation in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestComprehensiveOperation_in_graybox_test_go - 2019.07.03 at 12h 49m 57s.xml">
+      <configuration name="TestComprehensiveOperation in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestEmtpyOperation_in_graybox_test_go - 2019.07.03 at 12h 54m 52s.xml">
+      <configuration name="TestEmtpyOperation in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
   </component>
   <component name="TodoView" selected-index="1">
@@ -819,13 +790,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="766">
-          <caret line="659" lean-forward="true" selection-start-line="659" selection-end-line="659" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/namesapce_manager.go">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="-4308">
@@ -837,20 +801,6 @@
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="226">
           <caret line="328" lean-forward="true" selection-start-line="328" selection-end-line="328" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/graybox_test.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="707">
-          <caret line="657" lean-forward="true" selection-start-line="657" selection-end-line="657" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="811">
-          <caret line="147" lean-forward="true" selection-start-line="147" selection-end-line="147" />
         </state>
       </provider>
     </entry>
@@ -875,6 +825,13 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-1254">
+          <caret line="32" lean-forward="true" selection-start-line="32" selection-end-line="32" />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/client/chunk_lease.go">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="576">
@@ -884,8 +841,22 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="714">
-          <caret line="87" lean-forward="true" selection-start-line="87" selection-end-line="87" />
+        <state relative-caret-position="285">
+          <caret line="131" lean-forward="true" selection-start-line="131" selection-end-line="131" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="102">
+          <caret line="94" lean-forward="true" selection-start-line="94" selection-end-line="94" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/graybox_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="545">
+          <caret line="897" selection-start-line="897" selection-end-line="897" />
         </state>
       </provider>
     </entry>
