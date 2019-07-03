@@ -87,8 +87,8 @@ func (c *Client) getOffsetChunkIndex(offset gfs.Offset) gfs.ChunkIndex {
 func (c *Client) Read(path gfs.Path, offset gfs.Offset, data []byte) (n int, err error) {
 	rpcArgs := gfs.GetFileInfoArg{Path: path}
 	rpcReply := new(gfs.GetFileInfoReply)
-	if errx := util.Call(c.master, "Master.RPCGetFileInfo", rpcArgs, rpcReply); errx != nil {
-		err = errx
+	err = util.Call(c.master, "Master.RPCGetFileInfo", rpcArgs, rpcReply)
+	if err != nil {
 		log.Errorf("Read, call err[%v]", err)
 		return
 	} else if rpcReply.Error != nil {
@@ -102,9 +102,8 @@ func (c *Client) Read(path gfs.Path, offset gfs.Offset, data []byte) (n int, err
 		readOffsetChunkIdx := c.getOffsetChunkIndex(readOffset)
 
 		var handle gfs.ChunkHandle
-		handle, errx := c.GetChunkHandle(path, readOffsetChunkIdx)
-		if errx != nil {
-			err = errx
+		handle, err = c.GetChunkHandle(path, readOffsetChunkIdx)
+		if err != nil {
 			log.Errorf("Read, err[%v]", err)
 			return
 		}
@@ -118,16 +117,15 @@ func (c *Client) Read(path gfs.Path, offset gfs.Offset, data []byte) (n int, err
 			readLen = gfs.Offset(len(data))
 		}
 
-		nRead, errx := c.ReadChunk(handle, fileOffset, data[0:readLen])
+		var nRead int
+		nRead, err = c.ReadChunk(handle, fileOffset, data[0:readLen])
 		readOffset += gfs.Offset(nRead)
 		n += nRead
 
-		if errx == gfs.ErrReadEOF {
-			err = errx
+		if err == gfs.ErrReadEOF {
 			log.Warnf("Read, err[%v]", err)
 			return
-		} else if errx != nil {
-			err = errx
+		} else if err != nil {
 			log.Errorf("Read, err[%v]", err)
 			return
 		}
@@ -220,6 +218,7 @@ func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err erro
 		maxChunkIdx = gfs.ChunkIndex(rpcReply.Chunks - 1)
 	}
 
+	retry := 0
 	isSet := false
 
 	for {
@@ -248,6 +247,14 @@ func (c *Client) Append(path gfs.Path, data []byte) (offset gfs.Offset, err erro
 			continue
 		} else {
 			log.Errorf("Append, err[%v]", err)
+
+			if retry != gfs.ClientMaxRetry {
+				retry++
+				continue
+			}
+
+			log.Errorf("Append, finally failed, retry[%v]", retry)
+
 			return
 		}
 
@@ -392,100 +399,59 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 // Chunk offset of the start of data will be returned if success.
 // len(data) should be within max append size.
 func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Offset, err error) {
-	if len(data) > gfs.MaxAppendSize {
-		err = gfs.ErrAppendExceedMaxAppendSize
-		log.Errorf("AppendChunk, err[%v]", err)
-		return
+	for i := 0; i < gfs.ClientMaxRetry; i++ {
+		if len(data) > gfs.MaxAppendSize {
+			err = gfs.ErrAppendExceedMaxAppendSize
+			log.Errorf("AppendChunk, err[%v]", err)
+			return
+		}
+
+		lease, errx := c.leases.getChunkLease(handle)
+		if errx != nil {
+			log.Errorf("AppendChunk, err[%v]", errx)
+			err = errx
+			// return
+			continue
+		}
+
+		for j := 0; j < gfs.ClientMaxRetry; j++ {
+			rpcPDAFArgs := gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: lease.Secondaries}
+			rpcPDAFReply := new(gfs.PushDataAndForwardReply)
+			if errx := util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply); errx != nil {
+				log.Errorf("AppendChunk, call err[%v]", errx)
+				err = errx
+				// return
+				continue
+			} else if rpcPDAFReply.Error != nil {
+				log.Errorf("AppendChunk, err[%v]", rpcPDAFReply.Error)
+				err = rpcPDAFReply.Error
+				// return
+				continue
+			}
+
+			rpcAArgs := gfs.AppendChunkArg{DataID: rpcPDAFReply.DataID, Secondaries: lease.Secondaries, Version: lease.Version}
+			rpcAReply := new(gfs.AppendChunkReply)
+			if errx := util.Call(lease.Primary, "ChunkServer.RPCAppendChunk", rpcAArgs, rpcAReply); errx != nil {
+				log.Errorf("AppendChunk, call err[%v]", errx)
+				err = errx
+				// return
+				continue
+			} else if rpcAReply.Error == gfs.ErrAppendExceedChunkSize {
+				log.Warnf("AppendChunk, err[%v]", rpcAReply.Error)
+				err = rpcAReply.Error
+				return
+			} else if rpcAReply.Error != nil {
+				log.Errorf("AppendChunk, err[%v]", rpcAReply.Error)
+				err = rpcAReply.Error
+				// return
+				continue
+			}
+
+			offset = rpcAReply.Offset
+
+			return
+		}
 	}
-
-	lease, err := c.leases.getChunkLease(handle)
-	if err != nil {
-		log.Errorf("AppendChunk, err[%v]", err)
-		return
-	}
-
-	rpcPDAFArgs := gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: lease.Secondaries}
-	rpcPDAFReply := new(gfs.PushDataAndForwardReply)
-	if errx := util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply); errx != nil {
-		log.Errorf("AppendChunk, call err[%v]", errx)
-		err = errx
-		return
-	} else if rpcPDAFReply.Error != nil {
-		log.Errorf("AppendChunk, err[%v]", rpcPDAFReply.Error)
-		err = rpcPDAFReply.Error
-		return
-	}
-
-	rpcAArgs := gfs.AppendChunkArg{DataID: rpcPDAFReply.DataID, Secondaries: lease.Secondaries, Version: lease.Version}
-	rpcAReply := new(gfs.AppendChunkReply)
-	if errx := util.Call(lease.Primary, "ChunkServer.RPCAppendChunk", rpcAArgs, rpcAReply); errx != nil {
-		log.Errorf("AppendChunk, call err[%v]", errx)
-		err = errx
-		return
-	} else if rpcAReply.Error == gfs.ErrAppendExceedChunkSize {
-		log.Warnf("AppendChunk, err[%v]", rpcAReply.Error)
-		err = rpcAReply.Error
-		return
-	} else if rpcAReply.Error != nil {
-		log.Errorf("AppendChunk, err[%v]", rpcAReply.Error)
-		err = rpcAReply.Error
-		return
-	}
-
-	offset = rpcAReply.Offset
-
-	// for i := 0; i < gfs.ClientMaxRetry; i++ {
-	// 	lease, errx := c.leases.getChunkLease(handle)
-	// 	if errx != nil {
-	// 		log.Errorf("AppendChunk, err[%v]", err)
-	// 		err = errx
-	// 		return
-	// 	}
-	//
-	// 	rpcPDAFArgs := gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: lease.Secondaries}
-	// 	rpcPDAFReply := new(gfs.PushDataAndForwardReply)
-	// 	for j := 0; j < gfs.ClientMaxRetry; j++ {
-	// 		if errx := util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply); errx != nil {
-	// 			log.Errorf("AppendChunk, call err[%v]", errx)
-	// 			err = errx
-	// 			break
-	// 			// return
-	// 		} else if rpcPDAFReply.Error != nil {
-	// 			log.Errorf("AppendChunk, err[%v]", rpcPDAFReply.Error)
-	// 			err = rpcPDAFReply.Error
-	// 			continue
-	// 			// return
-	// 		}
-	// 	}
-	//
-	// 	if err != nil {
-	// 		log.Errorf("AppendChunk, RPCPushDataAndForward err[%v]", err)
-	// 		continue
-	// 	}
-	//
-	// 	rpcAArgs := gfs.AppendChunkArg{DataID: rpcPDAFReply.DataID, Secondaries: lease.Secondaries, Version: lease.Version}
-	// 	rpcAReply := new(gfs.AppendChunkReply)
-	// 	for j := 0; j < gfs.ClientMaxRetry; j++ {
-	// 		if errx := util.Call(lease.Primary, "ChunkServer.RPCAppendChunk", rpcAArgs, rpcAReply); errx != nil {
-	// 			log.Errorf("AppendChunk, call err[%v]", errx)
-	// 			err = errx
-	// 			break
-	// 			// return
-	// 		} else if rpcAReply.Error != nil {
-	// 			log.Errorf("AppendChunk, err[%v]", rpcAReply.Error)
-	// 			err = rpcAReply.Error
-	// 			continue
-	// 			// return
-	// 		}
-	//
-	// 		offset = rpcAReply.Offset
-	// 	}
-	//
-	// 	if err != nil {
-	// 		log.Errorf("AppendChunk, RPCAppendChunk err[%v]", err)
-	// 		continue
-	// 	}
-	// }
 
 	return
 }

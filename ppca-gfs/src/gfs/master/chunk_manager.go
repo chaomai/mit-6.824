@@ -51,6 +51,16 @@ func newChunkManager() *chunkManager {
 
 // RegisterReplica adds a replica for a chunk
 func (cm *chunkManager) RegisterReplica(handle gfs.ChunkHandle, addr gfs.ServerAddress) error {
+	cm.Lock()
+	defer cm.Unlock()
+
+	if _, ok := cm.chunk[handle]; !ok {
+		log.Infof("RegisterReplica, handle[%d], err[%v]", handle, gfs.ErrNoSuchHandle)
+		cm.chunk[handle] = new(chunkInfo)
+	}
+
+	cm.chunk[handle].location.Add(addr)
+
 	return nil
 }
 
@@ -136,7 +146,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 			err = errx
 			return
 		} else if rpcReply.Error == gfs.ErrStaleVersionAtMaster {
-			log.Warnf("GetLeaseHolder, master chunk version[%s], cs chunk version[%s], err[%v]", info.version, rpcReply.NewestVersion, err)
+			log.Warnf("GetLeaseHolder, master chunk version[%v], cs chunk version[%v], err[%v]", info.version, rpcReply.NewestVersion, err)
 			info.version = rpcReply.NewestVersion
 		} else if rpcReply.Error != nil {
 			log.Errorf("GetLeaseHolder, err[%v]", rpcReply.Error)
@@ -191,14 +201,13 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (h
 	cInfo := new(chunkInfo)
 	cInfo.path = path
 	for _, addr := range addrs {
-		errx := util.Call(addr, "ChunkServer.RPCCreateChunk", rpcArgs, rpcReply)
-		if errx != nil {
-			log.Errorf("CreateChunk, call err[%v]", errx)
-			err = errx
+		err = util.Call(addr, "ChunkServer.RPCCreateChunk", rpcArgs, rpcReply)
+		if err != nil {
+			log.Errorf("CreateChunk, call err[%v]", err)
 			return
 		} else if rpcReply.Error != nil {
-			log.Errorf("CreateChunk, err[%v]", rpcReply.Error)
 			err = rpcReply.Error
+			log.Errorf("CreateChunk, err[%v]", err)
 			return
 		}
 
@@ -214,6 +223,24 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (h
 
 	fInfo := cm.file[path]
 	fInfo.handles = append(fInfo.handles, handle)
+
+	return
+}
+
+func (cm *chunkManager) removeServerFromLocation(handle gfs.ChunkHandle, addr gfs.ServerAddress) (loc []gfs.ServerAddress, err error) {
+	cm.Lock()
+	defer cm.Unlock()
+
+	if _, ok := cm.chunk[handle]; !ok {
+		err = gfs.ErrNoSuchHandle
+		log.Errorf("removeServerFromLocation, handle[%d], err[%v]", handle, err)
+		return
+	}
+
+	cm.chunk[handle].location.Delete(addr)
+	for _, a := range cm.chunk[handle].location.GetAll() {
+		loc = append(loc, a.(gfs.ServerAddress))
+	}
 
 	return
 }

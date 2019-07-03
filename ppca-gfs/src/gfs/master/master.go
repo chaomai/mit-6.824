@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gfs"
+	"gfs/util"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -94,13 +95,65 @@ func (m *Master) Shutdown() {
 
 // BackgroundActivity does all the background activities:
 // dead chunkserver handling, garbage collection, stale replica detection, etc
-func (m *Master) BackgroundActivity() error {
-	return nil
+func (m *Master) BackgroundActivity() (err error) {
+	// dead chunkserver and reReplication
+	deadServers := m.csm.DetectDeadServers()
+	for _, deadAddr := range deadServers {
+		var deadCSHandles []gfs.ChunkHandle
+		deadCSHandles, err = m.csm.RemoveServer(deadAddr)
+		if err != nil {
+			log.Errorf("BackgroundActivity, err[%v]", err)
+			return
+		}
+
+		for _, handle := range deadCSHandles {
+			var curReplicas []gfs.ServerAddress
+			curReplicas, err = m.cm.removeServerFromLocation(handle, deadAddr)
+			if err != nil {
+				log.Errorf("BackgroundActivity, err[%v]", err)
+				return
+			}
+
+			var from, to gfs.ServerAddress
+			from, to, err = m.csm.ChooseReReplication(handle, curReplicas)
+			if err == gfs.ErrNoNeedForReReplication {
+				log.Warnf("BackgroundActivity, err[%v]", err)
+				continue
+			} else if err != nil {
+				log.Errorf("BackgroundActivity, err[%v]", err)
+				return
+			}
+
+			// copy replica
+			rpcArgs := gfs.SendCopyArg{Handle: handle, Address: to}
+			rpcReply := new(gfs.SendCopyReply)
+
+			err = util.Call(from, "ChunkServer.RPCSendCopy", rpcArgs, rpcReply)
+			if err != nil {
+				log.Errorf("BackgroundActivity, call err[%v]", err)
+				return
+			} else if rpcReply.Error != nil {
+				err = rpcReply.Error
+				log.Errorf("BackgroundActivity, err[%v]", err)
+				return
+			}
+
+			err = m.cm.RegisterReplica(handle, to)
+			if err != nil {
+				log.Errorf("BackgroundActivity, err[%v]", err)
+				return
+			}
+		}
+	}
+
+	return
 }
 
 // RPCHeartbeat is called by chunkserver to let the master know that a chunkserver is alive.
 // Lease extension request is included.
 func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) error {
+	log.Infof("master[%v], RPCHeartbeat, args[%+v]", m.address, args)
+
 	m.csm.Heartbeat(args.Address)
 
 	for _, v := range args.LeaseExtensions {
@@ -117,6 +170,8 @@ func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) 
 // RPCGetPrimaryAndSecondaries returns lease holder and secondaries of a chunk.
 // If no one holds the lease currently, grant one.
 func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesArg, reply *gfs.GetPrimaryAndSecondariesReply) error {
+	log.Infof("master[%v], RPCGetPrimaryAndSecondaries, args[%+v]", m.address, args)
+
 	l, err := m.cm.GetLeaseHolder(args.Handle)
 
 	if err != nil {
@@ -136,6 +191,8 @@ func (m *Master) RPCGetPrimaryAndSecondaries(args gfs.GetPrimaryAndSecondariesAr
 
 // RPCGetReplicas is called by client to find all chunkservers that hold the chunk.
 func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasReply) error {
+	log.Infof("master[%v], RPCGetReplicas, args[%+v]", m.address, args)
+
 	loc, err := m.cm.GetReplicas(args.Handle)
 	if err != nil {
 		reply.Error = err
@@ -153,18 +210,24 @@ func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasR
 
 // RPCCreateFile is called by client to create a new file
 func (m *Master) RPCCreateFile(args gfs.CreateFileArg, replay *gfs.CreateFileReply) error {
+	log.Infof("master[%v], RPCCreateFile, args[%+v]", m.address, args)
+
 	replay.Error = m.nm.Create(args.Path)
 	return nil
 }
 
 // RPCMkdir is called by client to make a new directory
 func (m *Master) RPCMkdir(args gfs.MkdirArg, replay *gfs.MkdirReply) error {
+	log.Infof("master[%v], RPCMkdir, args[%+v]", m.address, args)
+
 	replay.Error = m.nm.Mkdir(args.Path)
 	return nil
 }
 
 // RPCGetFileInfo is called by client to get file information
 func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoReply) error {
+	log.Infof("master[%v], RPCGetFileInfo, args[%+v]", m.address, args)
+
 	isDir, length, chunks, err := m.nm.GetFileInfo(args.Path)
 	reply.IsDir = isDir
 	reply.Length = length
@@ -177,12 +240,7 @@ func (m *Master) RPCGetFileInfo(args gfs.GetFileInfoArg, reply *gfs.GetFileInfoR
 // RPCGetChunkHandle returns the chunk handle of (path, index).
 // If the requested index is bigger than the number of chunks of this path by exactly one, create one.
 func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChunkHandleReply) error {
-	if err := m.nm.Create(args.Path); err == nil || err == gfs.ErrFileExists {
-		log.Infof("master[%v], RPCGetChunkHandle, file[%s], err[%v]", m.address, args.Path, err)
-	} else {
-		reply.Error = err
-		return nil
-	}
+	log.Infof("master[%v], RPCGetChunkHandle, args[%+v]", m.address, args)
 
 	dirParts, leafName, err := m.nm.dirAndLeafName(args.Path)
 	if err != nil {
@@ -260,6 +318,8 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 
 // RPCList returns list of files under path.
 func (m *Master) RPCList(args gfs.ListArg, reply *gfs.ListReply) error {
+	log.Infof("master[%v], RPCList, args[%+v]", m.address, args)
+
 	pathInfo, err := m.nm.List(args.Path)
 	reply.Files = pathInfo
 	reply.Error = err

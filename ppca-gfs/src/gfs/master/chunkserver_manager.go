@@ -38,7 +38,7 @@ func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress) {
 		csm.servers[addr] = new(chunkServerInfo)
 		csm.servers[addr].chunks = make(map[gfs.ChunkHandle]bool)
 	} else {
-		info.lastHeartbeat = time.Now()
+		info.lastHeartbeat = time.Now().Add(gfs.HeartbeatInterval)
 	}
 }
 
@@ -61,8 +61,42 @@ func (csm *chunkServerManager) AddChunk(addrs []gfs.ServerAddress, handle gfs.Ch
 // ChooseReReplication chooses servers to perform re-replication
 // called when the replicas number of a chunk is less than gfs.MinimumNumReplicas
 // returns two server address, the master will call 'from' to send a copy to 'to'
-func (csm *chunkServerManager) ChooseReReplication(handle gfs.ChunkHandle) (from, to gfs.ServerAddress, err error) {
-	return "", "", nil
+func (csm *chunkServerManager) ChooseReReplication(handle gfs.ChunkHandle, curReplicas []gfs.ServerAddress) (from, to gfs.ServerAddress, err error) {
+	csm.RLock()
+	defer csm.RUnlock()
+
+	if len(curReplicas) == gfs.DefaultNumReplicas {
+		err = gfs.ErrNoNeedForReReplication
+		return
+	}
+
+	var serversList util.ArraySet
+
+	for s, _ := range csm.servers {
+		isIn := false
+		for _, a := range curReplicas {
+			if s == a {
+				isIn = true
+				break
+			}
+		}
+
+		if !isIn {
+			serversList.Add(s)
+		}
+	}
+
+	i, err := util.Sample(len(curReplicas), 1)
+	if err != nil {
+		return
+	}
+
+	from = curReplicas[i[0]]
+	to = serversList.RandomPick().(gfs.ServerAddress)
+
+	log.Infof("ChooseReReplication, handle[%v] from[%v], to[%v]", handle, from, to)
+
+	return
 }
 
 // ChooseServers returns servers to store new chunk.
@@ -97,12 +131,40 @@ func (csm *chunkServerManager) ChooseServers(num int) (servers []gfs.ServerAddre
 }
 
 // DetectDeadServers detects disconnected chunkservers according to last heartbeat time
-func (csm *chunkServerManager) DetectDeadServers() []gfs.ServerAddress {
-	return nil
+func (csm *chunkServerManager) DetectDeadServers() (servers []gfs.ServerAddress) {
+	csm.RLock()
+	defer csm.RUnlock()
+
+	for addr, info := range csm.servers {
+		if time.Now().After(info.lastHeartbeat) {
+			servers = append(servers, addr)
+		}
+	}
+
+	log.Debugf("DetectDeadServers, servers[%v]", servers)
+
+	return
 }
 
 // RemoveServers removes metedata of a disconnected chunkserver.
 // It returns the chunks that server holds
 func (csm *chunkServerManager) RemoveServer(addr gfs.ServerAddress) (handles []gfs.ChunkHandle, err error) {
-	return nil, nil
+	csm.Lock()
+	defer csm.Unlock()
+
+	if info, ok := csm.servers[addr]; !ok {
+		log.Errorf("RemoveServer, server[%s] doesn't exist", addr)
+		err = gfs.ErrNoSuchServer
+		return
+	} else {
+		for h, _ := range info.chunks {
+			handles = append(handles, h)
+		}
+
+		delete(csm.servers, addr)
+
+		log.Debugf("RemoveServer, server[%v]", addr)
+
+		return
+	}
 }

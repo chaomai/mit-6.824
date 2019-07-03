@@ -40,6 +40,7 @@ const (
 )
 
 var (
+	ErrNoNeedForReReplication     = NewError("no need to re-replication")
 	ErrChunkExists                = NewError("chunk exists")
 	ErrDirectoryExists            = NewError("directory exists")
 	ErrCreateDiscontinuousChunk   = NewError("discontinuous chunk should not be created")
@@ -50,6 +51,7 @@ var (
 	ErrNoReplicas                 = NewError("no replicas")
 	ErrNoSuchDataID               = NewError("no such data ID")
 	ErrNoSuchHandle               = NewError("no such handle")
+	ErrNoSuchServer               = NewError("no such server")
 	ErrPathIsNotDirectory         = NewError("path isn't a directory")
 	ErrPathIsNotFile              = NewError("path isn't a file")
 	ErrPathNotExists              = NewError("path doesn't exist")
@@ -100,17 +102,17 @@ const (
 	LeaseExpire = 100 * time.Minute
 	// LeaseExpire        = 2 * time.Second
 	HeartbeatInterval  = 100 * time.Millisecond
-	BackgroundInterval = 200 * time.Millisecond //
-	ServerTimeout      = 1 * time.Second        //
+	BackgroundInterval = 200 * time.Millisecond
+	ServerTimeout      = 1 * time.Second
 
 	MaxChunkSize  = 512 << 10 // 512KB DEBUG ONLY 64 << 20
 	MaxAppendSize = MaxChunkSize / 4
 
-	DefaultNumReplicas = 1
+	DefaultNumReplicas = 3
 	MinimumNumReplicas = 2
 
 	DownloadBufferExpire = 2 * time.Minute
-	DownloadBufferTick = 10 * time.Second
+	DownloadBufferTick   = 10 * time.Second
 
 	ClientMaxRetry = 3
 )

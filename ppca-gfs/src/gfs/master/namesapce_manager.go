@@ -54,11 +54,11 @@ func (nm *namespaceManager) dirAndLeafName(p gfs.Path) (dirParts []string, leafN
 }
 
 func (nm *namespaceManager) lockParents(dirParts []string, isRLockParent bool) (parentNode *nsTree, err error) {
-	log.Infof("lockParents, lock path[%s]", dirParts)
+	log.Debugf("lockParents, lock path[%s]", dirParts)
 
 	curNode := nm.root
 	for i, dir := range dirParts {
-		log.Infof("lockParents, lock node[%s]", dir)
+		log.Debugf("lockParents, lock node[%s]", dir)
 
 		if _, ok := curNode.children[dir]; !ok {
 			log.Errorf("lockParents, path[%s], err[%v]", strings.Join(dirParts[0:i], "/"), gfs.ErrPathNotExists)
@@ -88,6 +88,8 @@ func (nm *namespaceManager) lockParents(dirParts []string, isRLockParent bool) (
 }
 
 func (nm *namespaceManager) unlockParents(dirParts []string, isRLockParent bool) {
+	log.Debugf("unlockParents, lock path[%s]", dirParts)
+
 	parentPath := make([]*nsTree, 0)
 
 	curNode := nm.root
@@ -104,7 +106,7 @@ func (nm *namespaceManager) unlockParents(dirParts []string, isRLockParent bool)
 
 	l := len(parentPath)
 	for i := range parentPath {
-		log.Infof("unlockParents, unlock node[%s]", dirParts[l-i-1])
+		log.Debugf("unlockParents, unlock node[%s]", dirParts[l-i-1])
 		parentPath[l-i-1].RUnlock()
 	}
 }

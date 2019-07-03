@@ -134,10 +134,16 @@ func (cs *ChunkServer) Shutdown() {
 	}
 }
 
+func (cs *ChunkServer) extendLease(handle gfs.ChunkHandle) {
+	cs.pendingLeaseExtensions.Add(handle)
+}
+
 // RPCGrantLease is called by mater.
 // It increment version of a chunk when master grant lease.
 func (cs *ChunkServer) RPCGrantLease(args gfs.GrantLeaseArg, reply *gfs.GrantLeaseReply) error {
 	log.Infof("chunkserver[%v], RPCGrantLease, args[%+v]", cs.address, args)
+
+	cs.extendLease(args.Handle)
 
 	cs.RLock()
 	defer cs.RUnlock()
@@ -224,6 +230,7 @@ func (cs *ChunkServer) RPCForwardData(args gfs.ForwardDataArg, reply *gfs.Forwar
 // RPCCreateChunk is called by master to create a new chunk given the chunk handle.
 func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.CreateChunkReply) error {
 	log.Infof("chunkserver[%v], RPCCreateChunk, args[%+v]", cs.address, args)
+
 	cs.Lock()
 	defer cs.Unlock()
 
@@ -254,6 +261,8 @@ func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.Create
 // RPCReadChunk is called by client, read chunk data and return
 func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkReply) error {
 	log.Infof("chunkserver[%v], RPCReadChunk, args[%+v]", cs.address, args)
+
+	cs.extendLease(args.Handle)
 
 	cs.RLock()
 	defer cs.RUnlock()
@@ -314,6 +323,8 @@ func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkR
 func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChunkReply) error {
 	log.Infof("chunkserver[%v], RPCWriteChunk, args[%+v]", cs.address, args)
 
+	cs.extendLease(args.DataID.Handle)
+
 	cs.RLock()
 	defer cs.RUnlock()
 	if _, ok := cs.chunk[args.DataID.Handle]; !ok {
@@ -372,6 +383,8 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 // pad current chunk and ask the client to retry on the next chunk.
 func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.AppendChunkReply) error {
 	log.Infof("chunkserver[%v], RPCAppendChunk, args[%+v]", cs.address, args)
+
+	cs.extendLease(args.DataID.Handle)
 
 	cs.RLock()
 	defer cs.RUnlock()
@@ -632,11 +645,15 @@ func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.Ap
 
 // RPCSendCopy is called by master, send the whole copy to given address
 func (cs *ChunkServer) RPCSendCopy(args gfs.SendCopyArg, reply *gfs.SendCopyReply) error {
+	log.Infof("chunkserver[%v], RPCSendCopy, args[%+v]", cs.address, args)
+
 	return nil
 }
 
 // RPCApplyCopy is called by another replica
 // rewrite the local version to given copy data
 func (cs *ChunkServer) RPCApplyCopy(args gfs.ApplyCopyArg, reply *gfs.ApplyCopyReply) error {
+	log.Infof("chunkserver[%v], RPCApplyCopy, args[%+v]", cs.address, args)
+
 	return nil
 }

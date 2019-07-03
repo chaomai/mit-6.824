@@ -32,7 +32,7 @@ var (
 const (
 	mAdd  = ":27777"
 	csNum = 5
-	N = 10
+	N     = 10
 )
 
 func errorAll(ch chan error, n int, t *testing.T) {
@@ -109,6 +109,7 @@ func TestMkdirDeleteList(t *testing.T) {
 }
 
 func TestRPCGetChunkHandle(t *testing.T) {
+	TestCreateFile(t)
 	var r1, r2 gfs.GetChunkHandleReply
 	path := gfs.Path("/test1.txt")
 	err := m.RPCGetChunkHandle(gfs.GetChunkHandleArg{path, 0}, &r1)
@@ -356,9 +357,8 @@ func TestAppendReadBigData(t *testing.T) {
 	}
 
 	// append large data
-	offset, err := c.Append(p, expected)
+	_, err := c.Append(p, expected)
 	ch <- err
-	t.Log(offset)
 
 	// read
 	buf := make([]byte, size)
@@ -647,11 +647,14 @@ func TestShutdownInAppend(t *testing.T) {
 
 	time.Sleep(N * time.Millisecond)
 	// choose two servers to shutdown during appending
-	// for i, v := range cs {
-	// 	if csAdd[i] == l.Locations[0] || csAdd[i] == l.Locations[1] {
-	// 		v.Shutdown()
-	// 	}
-	// }
+	for i, v := range cs {
+		if csAdd[i] == l.Locations[0] || csAdd[i] == l.Locations[1] {
+			v.Shutdown()
+		}
+	}
+
+	var i chan int
+	<-i
 
 	errorAll(ch, N+3, t)
 
@@ -886,7 +889,8 @@ func TestDiskError(t *testing.T) {
 // todo : simulate an extremely adverse condition
 
 func TestMain(tm *testing.M) {
-	log.SetLevel(log.ErrorLevel)
+	log.SetLevel(log.DebugLevel)
+	// log.SetLevel(log.ErrorLevel)
 
 	// create temporary directory
 	var err error
