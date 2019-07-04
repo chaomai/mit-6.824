@@ -183,7 +183,7 @@ func checkReplicas(handle gfs.ChunkHandle, length int, t *testing.T) int {
 	args := gfs.ReadChunkArg{handle, 0, length}
 	for _, addr := range l.Locations {
 		var r gfs.ReadChunkReply
-		if errx := util.Call(addr, "ChunkServer.RPCReadChunk", args, &r); errx == nil && r.Error == nil {
+		if err := util.Call(addr, "ChunkServer.RPCReadChunk", args, &r); err == nil && (r.Error == gfs.ErrReadEOF || r.Error == nil) {
 			data = append(data, r.Data)
 			// fmt.Println("find in ", addr)
 		}
@@ -618,10 +618,15 @@ func TestComprehensiveOperation(t *testing.T) {
 /*
  *  TEST SUITE 3 - Fault Tolerance
  */
+func TestEmptyOperation(t *testing.T) {
+	timer := time.NewTimer(5 * time.Second)
 
-func TestEmtpyOperation(t *testing.T) {
 	var i chan int
-	<-i
+	select {
+	case <-timer.C:
+		return
+	case <-i:
+	}
 }
 
 // Shutdown two chunk servers during appending
@@ -658,9 +663,6 @@ func TestShutdownInAppend(t *testing.T) {
 		}
 	}
 
-	var i chan int
-	<-i
-
 	errorAll(ch, N+3, t)
 
 	// check correctness, append at least once
@@ -693,12 +695,12 @@ func TestShutdownInAppend(t *testing.T) {
 	}
 
 	// restart
-	// for i := range cs {
-	// 	if csAdd[i] == l.Locations[0] || csAdd[i] == l.Locations[1] {
-	// 		ii := strconv.Itoa(i)
-	// 		cs[i] = chunkserver.NewAndServe(csAdd[i], mAdd, path.Join(root, "cs"+ii))
-	// 	}
-	// }
+	for i := range cs {
+		if csAdd[i] == l.Locations[0] || csAdd[i] == l.Locations[1] {
+			ii := strconv.Itoa(i)
+			cs[i] = chunkserver.NewAndServe(csAdd[i], mAdd, path.Join(root, "cs"+ii))
+		}
+	}
 }
 
 // Shutdown all servers in turns. You should perform re-replication well
@@ -894,7 +896,7 @@ func TestDiskError(t *testing.T) {
 // todo : simulate an extremely adverse condition
 
 func TestMain(tm *testing.M) {
-	// log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.DebugLevel)
 	// log.SetLevel(log.ErrorLevel)
 
 	// create temporary directory
@@ -903,8 +905,6 @@ func TestMain(tm *testing.M) {
 	if err != nil {
 		log.Fatal("cannot create temporary directory: ", err)
 	}
-
-	// log.SetLevel(log.FatalLevel)
 
 	// run master
 	os.Mkdir(path.Join(root, "m"), 0755)

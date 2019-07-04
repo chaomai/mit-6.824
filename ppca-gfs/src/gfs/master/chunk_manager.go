@@ -49,6 +49,29 @@ func newChunkManager() *chunkManager {
 	return cm
 }
 
+func (cm *chunkManager) getUnFullReplicated() (r []gfs.ChunkHandle) {
+	cm.RLock()
+	defer cm.RUnlock()
+
+	for handle, info := range cm.chunk {
+		info.RLock()
+		if info.location.Size() != gfs.DefaultNumReplicas {
+			curReplicas := make([]gfs.ServerAddress, 0)
+			for _, addr := range info.location.GetAll() {
+				curReplicas = append(curReplicas, addr.(gfs.ServerAddress))
+			}
+
+			r = append(r, handle)
+		}
+
+		info.RUnlock()
+	}
+
+	log.Debugf("getUnFullReplicated, handles[%v]", r)
+
+	return
+}
+
 // RegisterReplica adds a replica for a chunk
 func (cm *chunkManager) RegisterReplica(handle gfs.ChunkHandle, addr gfs.ServerAddress) error {
 	cm.Lock()
@@ -65,7 +88,7 @@ func (cm *chunkManager) RegisterReplica(handle gfs.ChunkHandle, addr gfs.ServerA
 }
 
 // GetReplicas returns the replicas of a chunk
-func (cm *chunkManager) GetReplicas(handle gfs.ChunkHandle) (loc *util.ArraySet, err error) {
+func (cm *chunkManager) GetReplicas(handle gfs.ChunkHandle) (loc []gfs.ServerAddress, err error) {
 	cm.RLock()
 	defer cm.RUnlock()
 
@@ -78,7 +101,11 @@ func (cm *chunkManager) GetReplicas(handle gfs.ChunkHandle) (loc *util.ArraySet,
 	info := cm.chunk[handle]
 	info.RLock()
 	defer info.RUnlock()
-	loc = &info.location
+
+	for _, e := range info.location.GetAll() {
+		addr := e.(gfs.ServerAddress)
+		loc = append(loc, addr)
+	}
 
 	return
 }
@@ -146,7 +173,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 			err = errx
 			return
 		} else if rpcReply.Error == gfs.ErrStaleVersionAtMaster {
-			log.Warnf("GetLeaseHolder, master chunk version[%v], cs chunk version[%v], err[%v]", info.version, rpcReply.NewestVersion, err)
+			log.Warnf("GetLeaseHolder, master chunk version[%v], cs chunk version[%v], err[%v]", info.version, rpcReply.NewestVersion, rpcReply.Error)
 			info.version = rpcReply.NewestVersion
 		} else if rpcReply.Error != nil {
 			log.Errorf("GetLeaseHolder, err[%v]", rpcReply.Error)
@@ -227,7 +254,7 @@ func (cm *chunkManager) CreateChunk(path gfs.Path, addrs []gfs.ServerAddress) (h
 	return
 }
 
-func (cm *chunkManager) removeServerFromLocation(handle gfs.ChunkHandle, addr gfs.ServerAddress) (loc []gfs.ServerAddress, err error) {
+func (cm *chunkManager) removeServerFromLocation(handle gfs.ChunkHandle, servers [] gfs.ServerAddress) (loc []gfs.ServerAddress, err error) {
 	cm.Lock()
 	defer cm.Unlock()
 
@@ -237,7 +264,11 @@ func (cm *chunkManager) removeServerFromLocation(handle gfs.ChunkHandle, addr gf
 		return
 	}
 
-	cm.chunk[handle].location.Delete(addr)
+	for _, addr := range servers {
+		log.Debugf("removeServerFromLocation, handle[%d], delete[%v]", handle, addr)
+		cm.chunk[handle].location.Delete(addr)
+	}
+
 	for _, a := range cm.chunk[handle].location.GetAll() {
 		loc = append(loc, a.(gfs.ServerAddress))
 	}

@@ -91,16 +91,20 @@ func (e GError) Error() string {
 }
 
 type CSChunkInfo struct {
-	Handle  ChunkHandle
-	Length  Offset
-	Version ChunkVersion // version number of the chunk in disk
+	Handle   ChunkHandle
+	Length   Offset
+	Version  ChunkVersion // version number of the chunk in disk
+	CheckSum []ChunkCheckSum
+}
+
+type ReReplicationInfo struct {
+	Handle      ChunkHandle
+	CurReplicas []ServerAddress
 }
 
 // system config
 const (
-	// TODO for debug
-	LeaseExpire = 100 * time.Minute
-	// LeaseExpire        = 2 * time.Second
+	LeaseExpire        = 2 * time.Second
 	HeartbeatInterval  = 100 * time.Millisecond
 	BackgroundInterval = 200 * time.Millisecond
 	ServerTimeout      = 1 * time.Second
@@ -115,6 +119,9 @@ const (
 	DownloadBufferTick   = 10 * time.Second
 
 	ClientMaxRetry = 3
+
+	MetaFileName = "gfs-server.meta"
+	DefaultFilePerm     = 0755
 )
 
 func init() {

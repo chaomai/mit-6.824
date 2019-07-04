@@ -35,8 +35,27 @@ func (csm *chunkServerManager) Heartbeat(addr gfs.ServerAddress) {
 
 	if info, ok := csm.servers[addr]; !ok {
 		log.Infof("Heartbeat, server[%s] doesn't exist, adding", addr)
-		csm.servers[addr] = new(chunkServerInfo)
-		csm.servers[addr].chunks = make(map[gfs.ChunkHandle]bool)
+		serverInfo := new(chunkServerInfo)
+		serverInfo.lastHeartbeat = time.Now()
+		serverInfo.chunks = make(map[gfs.ChunkHandle]bool)
+
+		rpcArgs := gfs.GetChunksArg{}
+		rpcReply := new(gfs.GetChunksReply)
+
+		err := util.Call(addr, "ChunkServer.RPCGetChunks", rpcArgs, rpcReply)
+		if err != nil {
+			log.Errorf("Heartbeat, call err[%v]", err)
+		} else if rpcReply.Error != nil {
+			err = rpcReply.Error
+			log.Errorf("Heartbeat, err[%v]", err)
+		}
+
+		for _, chunk := range rpcReply.Chunks {
+			log.Debugf("Heartbeat, server[%s], add handle[%v]", addr, chunk.Handle)
+			serverInfo.chunks[chunk.Handle] = true
+		}
+
+		csm.servers[addr] = serverInfo
 	} else {
 		info.lastHeartbeat = time.Now().Add(gfs.HeartbeatInterval)
 	}
@@ -136,7 +155,7 @@ func (csm *chunkServerManager) DetectDeadServers() (servers []gfs.ServerAddress)
 	defer csm.RUnlock()
 
 	for addr, info := range csm.servers {
-		if time.Now().After(info.lastHeartbeat) {
+		if time.Now().After(info.lastHeartbeat.Add(gfs.ServerTimeout)) {
 			servers = append(servers, addr)
 		}
 	}
@@ -148,23 +167,31 @@ func (csm *chunkServerManager) DetectDeadServers() (servers []gfs.ServerAddress)
 
 // RemoveServers removes metedata of a disconnected chunkserver.
 // It returns the chunks that server holds
-func (csm *chunkServerManager) RemoveServer(addr gfs.ServerAddress) (handles []gfs.ChunkHandle, err error) {
+func (csm *chunkServerManager) RemoveServers(servers [] gfs.ServerAddress) (handleLocs map[gfs.ChunkHandle][]gfs.ServerAddress, err error) {
 	csm.Lock()
 	defer csm.Unlock()
 
-	if info, ok := csm.servers[addr]; !ok {
-		log.Errorf("RemoveServer, server[%s] doesn't exist", addr)
-		err = gfs.ErrNoSuchServer
-		return
-	} else {
-		for h, _ := range info.chunks {
-			handles = append(handles, h)
+	handleLocs = make(map[gfs.ChunkHandle][]gfs.ServerAddress)
+
+	for _, addr := range servers {
+		if info, ok := csm.servers[addr]; !ok {
+			log.Errorf("RemoveServer, server[%s] doesn't exist", addr)
+			err = gfs.ErrNoSuchServer
+			return
+		} else {
+			for handle, _ := range info.chunks {
+				if _, ok := handleLocs[handle]; !ok {
+					handleLocs[handle] = make([]gfs.ServerAddress, 0)
+				}
+
+				handleLocs[handle] = append(handleLocs[handle], addr)
+			}
+
+			delete(csm.servers, addr)
+
+			log.Debugf("RemoveServer, server[%v]", addr)
 		}
-
-		delete(csm.servers, addr)
-
-		log.Debugf("RemoveServer, server[%v]", addr)
-
-		return
 	}
+
+	return
 }

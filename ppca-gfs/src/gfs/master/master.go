@@ -21,6 +21,9 @@ type Master struct {
 	nm  *namespaceManager
 	cm  *chunkManager
 	csm *chunkServerManager
+
+	toReReplicateCh chan gfs.ChunkHandle
+	deadServerCh    chan []gfs.ServerAddress
 }
 
 // NewAndServe starts a master and returns the pointer to it.
@@ -34,6 +37,9 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 	m.nm = newNamespaceManager()
 	m.cm = newChunkManager()
 	m.csm = newChunkServerManager()
+
+	m.toReReplicateCh = make(chan gfs.ChunkHandle, 10)
+	m.deadServerCh = make(chan []gfs.ServerAddress, 10)
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(m)
@@ -83,6 +89,9 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 		}
 	}()
 
+	go m.reReplication()
+	go m.dealDeadServer()
+
 	log.Infof("master[%v], Master is running now. addr = %v, root path = %v", address, address, serverRoot)
 
 	return m
@@ -93,60 +102,107 @@ func (m *Master) Shutdown() {
 	close(m.shutdown)
 }
 
-// BackgroundActivity does all the background activities:
-// dead chunkserver handling, garbage collection, stale replica detection, etc
-func (m *Master) BackgroundActivity() (err error) {
-	// dead chunkserver and reReplication
-	deadServers := m.csm.DetectDeadServers()
-	log.Infof("BackgroundActivity, deadServers[%v]", deadServers)
-	return
-
-	for _, deadAddr := range deadServers {
-		var deadCSHandles []gfs.ChunkHandle
-		deadCSHandles, err = m.csm.RemoveServer(deadAddr)
-		if err != nil {
-			log.Errorf("BackgroundActivity, err[%v]", err)
+func (m *Master) reReplication() {
+	for {
+		select {
+		case <-m.shutdown:
 			return
-		}
+		case handle := <-m.toReReplicateCh:
 
-		for _, handle := range deadCSHandles {
 			var curReplicas []gfs.ServerAddress
-			curReplicas, err = m.cm.removeServerFromLocation(handle, deadAddr)
+			var from, to gfs.ServerAddress
+			var err error
+
+			curReplicas, err = m.cm.GetReplicas(handle)
 			if err != nil {
-				log.Errorf("BackgroundActivity, err[%v]", err)
-				return
+				log.Errorf("reReplication, err[%v]", err)
+				m.toReReplicateCh <- handle
+				break
 			}
 
-			var from, to gfs.ServerAddress
 			from, to, err = m.csm.ChooseReReplication(handle, curReplicas)
 			if err == gfs.ErrNoNeedForReReplication {
-				log.Warnf("BackgroundActivity, err[%v]", err)
-				continue
+				log.Warnf("reReplication, err[%v]", err)
+				break
 			} else if err != nil {
-				log.Errorf("BackgroundActivity, err[%v]", err)
-				return
+				log.Errorf("reReplication, err[%v]", err)
+				m.toReReplicateCh <- handle
+				break
 			}
 
-			// copy replica
 			rpcArgs := gfs.SendCopyArg{Handle: handle, Address: to}
 			rpcReply := new(gfs.SendCopyReply)
 
 			err = util.Call(from, "ChunkServer.RPCSendCopy", rpcArgs, rpcReply)
 			if err != nil {
-				log.Errorf("BackgroundActivity, call err[%v]", err)
-				return
+				log.Errorf("reReplication, call err[%v]", err)
+				m.toReReplicateCh <- handle
+				break
+			} else if rpcReply.Error == gfs.ErrChunkExists {
+				log.Warnf("reReplication, err[%v]", err)
 			} else if rpcReply.Error != nil {
 				err = rpcReply.Error
-				log.Errorf("BackgroundActivity, err[%v]", err)
-				return
+				log.Errorf("reReplication, err[%v]", err)
+				m.toReReplicateCh <- handle
+				break
 			}
 
 			err = m.cm.RegisterReplica(handle, to)
 			if err != nil {
+				log.Errorf("reReplication, err[%v]", err)
+				m.toReReplicateCh <- handle
+				break
+			}
+
+			l, err := m.cm.GetReplicas(handle)
+			log.Infof("reReplication, GetReplicas[%v]", l)
+		}
+	}
+}
+
+func (m *Master) dealDeadServer() {
+	for {
+		select {
+		case <-m.shutdown:
+			return
+		case deadServers := <-m.deadServerCh:
+			var deadCSHandles map[gfs.ChunkHandle][]gfs.ServerAddress
+			deadCSHandles, err := m.csm.RemoveServers(deadServers)
+			if err != nil {
 				log.Errorf("BackgroundActivity, err[%v]", err)
-				return
+				break
+			}
+
+			log.Debugf("BackgroundActivity, deadCSHandles[%v]", deadCSHandles)
+
+			for handle, servers := range deadCSHandles {
+				_, err = m.cm.removeServerFromLocation(handle, servers)
+				if err != nil {
+					log.Errorf("BackgroundActivity, err[%v]", err)
+					break
+				}
+
+				log.Debugf("BackgroundActivity, handle[%v]", handle)
+
+				// re-replication
+				m.toReReplicateCh <- handle
 			}
 		}
+	}
+}
+
+// BackgroundActivity does all the background activities:
+// dead chunkserver handling, garbage collection, stale replica detection, etc
+func (m *Master) BackgroundActivity() (err error) {
+	// dead chunkserver and reReplication
+	deadServers := m.csm.DetectDeadServers()
+	m.deadServerCh <- deadServers
+
+	// not fully replicated handles
+	unFullReplicaHandles := m.cm.getUnFullReplicated()
+	for _, handle := range unFullReplicaHandles {
+		// re-replication
+		m.toReReplicateCh <- handle
 	}
 
 	return
@@ -203,10 +259,7 @@ func (m *Master) RPCGetReplicas(args gfs.GetReplicasArg, reply *gfs.GetReplicasR
 		return nil
 	}
 
-	for _, e := range loc.GetAll() {
-		addr := e.(gfs.ServerAddress)
-		reply.Locations = append(reply.Locations, addr)
-	}
+	reply.Locations = loc
 
 	return nil
 }

@@ -1,6 +1,7 @@
 package chunkserver
 
 import (
+	"encoding/gob"
 	"io"
 	"net"
 	"net/rpc"
@@ -29,6 +30,9 @@ type ChunkServer struct {
 	dl                     *downloadBuffer                // expiring download buffer
 	pendingLeaseExtensions *util.ArraySet                 // pending lease extension
 	chunk                  map[gfs.ChunkHandle]*chunkInfo // chunk information
+
+	metaMutex sync.RWMutex
+	metaRoot  string
 }
 
 type Mutation struct {
@@ -57,15 +61,22 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 		dl:                     newDownloadBuffer(gfs.DownloadBufferExpire, gfs.DownloadBufferTick),
 		pendingLeaseExtensions: new(util.ArraySet),
 		chunk:                  make(map[gfs.ChunkHandle]*chunkInfo),
+		metaRoot:               path.Join(serverRoot, gfs.MetaFileName),
 	}
 	rpcs := rpc.NewServer()
 	rpcs.Register(cs)
-	l, e := net.Listen("tcp", string(cs.address))
-	if e != nil {
-		log.Fatal("listen error:", e)
+	l, err := net.Listen("tcp", string(cs.address))
+	if err != nil {
+		log.Fatal("listen error:", err)
 		log.Exit(1)
 	}
 	cs.l = l
+
+	err = cs.deserialize()
+	if err != nil {
+		log.Fatalf("chunkserver[%v], NewAndServe, err[%v]", cs.address, err)
+		log.Exit(1)
+	}
 
 	// RPC Handler
 	go func() {
@@ -99,6 +110,11 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 			default:
 			}
 
+			if err := cs.serialize(); err != nil {
+				log.Errorf("chunkserver[%v], NewAndServe, err[%v]", cs.address, err)
+				return
+			}
+
 			pe := cs.pendingLeaseExtensions.GetAllAndClear()
 			le := make([]gfs.ChunkHandle, len(pe))
 			for i, v := range pe {
@@ -110,8 +126,8 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 				LeaseExtensions: le,
 			}
 
-			if errx := util.Call(cs.master, "Master.RPCHeartbeat", args, nil); errx != nil {
-				log.Fatal("heartbeat rpc error ", errx)
+			if err := util.Call(cs.master, "Master.RPCHeartbeat", args, nil); err != nil {
+				log.Fatal("heartbeat rpc error ", err)
 				log.Exit(1)
 			}
 
@@ -122,6 +138,75 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 	log.Infof("chunkserver[%v], ChunkServer is now running. addr = %v, root path = %v, master addr = %v", addr, addr, serverRoot, masterAddr)
 
 	return cs
+}
+
+func (cs *ChunkServer) serialize() error {
+	cs.metaMutex.Lock()
+	defer cs.metaMutex.Unlock()
+
+	persistChunks := make([]gfs.CSChunkInfo, 0)
+
+	for handle, info := range cs.chunk {
+		persistChunks = append(persistChunks, gfs.CSChunkInfo{Handle: handle, Length: info.length, Version: info.version, CheckSum: info.checksum})
+	}
+
+	fp, err := os.OpenFile(cs.metaRoot, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
+	if err != nil {
+		log.Errorf("chunkserver[%v], deserialize, err[%v]", cs.address, err)
+		return err
+	}
+
+	defer fp.Close()
+
+	enc := gob.NewEncoder(fp)
+	err = enc.Encode(persistChunks)
+	if err != nil {
+		log.Errorf("chunkserver[%v], serialize, err[%v]", cs.address, err)
+		return err
+	}
+
+	return nil
+}
+
+func (cs *ChunkServer) deserialize() error {
+	cs.metaMutex.Lock()
+	defer cs.metaMutex.Unlock()
+
+	if _, err := os.Stat(cs.metaRoot); os.IsNotExist(err) {
+		log.Infof("chunkserver[%v], deserialize, err[%v]", cs.address, err)
+		return nil
+	} else if err != nil {
+		log.Errorf("chunkserver[%v], deserialize, err[%v]", cs.address, err)
+		return err
+	}
+
+	persistChunks := make([]gfs.CSChunkInfo, 0)
+
+	fp, err := os.OpenFile(cs.metaRoot, os.O_CREATE|os.O_RDONLY, gfs.DefaultFilePerm)
+	if err != nil {
+		log.Errorf("chunkserver[%v], deserialize, err[%v]", cs.address, err)
+		return err
+	}
+
+	defer fp.Close()
+
+	dec := gob.NewDecoder(fp)
+	err = dec.Decode(&persistChunks)
+	if err != nil {
+		log.Errorf("chunkserver[%v], deserialize, err[%v]", cs.address, err)
+		return err
+	}
+
+	for _, chunk := range persistChunks {
+		info := new(chunkInfo)
+		info.length = chunk.Length
+		info.version = chunk.Version
+		info.checksum = chunk.CheckSum
+
+		cs.chunk[chunk.Handle] = info
+	}
+
+	return nil
 }
 
 // Shutdown shuts the chunkserver down
@@ -180,8 +265,8 @@ func (cs *ChunkServer) RPCGetChunks(args gfs.GetChunksArg, reply *gfs.GetChunksR
 	cs.RLock()
 	defer cs.RUnlock()
 
-	for k, v := range cs.chunk {
-		reply.Chunks = append(reply.Chunks, gfs.CSChunkInfo{Handle: k, Length: v.length, Version: v.version})
+	for handle, info := range cs.chunk {
+		reply.Chunks = append(reply.Chunks, gfs.CSChunkInfo{Handle: handle, Length: info.length, Version: info.version, CheckSum: info.checksum})
 	}
 
 	return nil
@@ -206,12 +291,13 @@ func (cs *ChunkServer) RPCPushDataAndForward(args gfs.PushDataAndForwardArg, rep
 	if len(forwardTo) > 0 {
 		rpcArgs := gfs.PushDataAndForwardArg{Handle: args.Handle, DataID: dataID, Data: args.Data, ForwardTo: forwardTo[1:]}
 		rpcReply := new(gfs.PushDataAndForwardReply)
-		if errx := util.Call(forwardTo[0], "ChunkServer.RPCPushDataAndForward", rpcArgs, rpcReply); errx != nil {
-			log.Errorf("chunkserver[%v], RPCPushDataAndForward, call err[%v]", cs.address, errx)
-			rpcReply.Error = errx
+		if err := util.Call(forwardTo[0], "ChunkServer.RPCPushDataAndForward", rpcArgs, rpcReply); err != nil {
+			log.Errorf("chunkserver[%v], RPCPushDataAndForward, call err[%v]", cs.address, err)
+			reply.Error = err
 			return nil
 		} else if rpcReply.Error != nil {
 			log.Errorf("chunkserver[%v], RPCPushDataAndForward, err[%v]", cs.address, rpcReply.Error)
+			reply.Error = rpcReply.Error
 			return nil
 		}
 	}
@@ -222,7 +308,6 @@ func (cs *ChunkServer) RPCPushDataAndForward(args gfs.PushDataAndForwardArg, rep
 }
 
 // RPCForwardData is called by another replica who sends data to the current memory buffer.
-// TODO: This should be replaced by a chain forwarding.
 func (cs *ChunkServer) RPCForwardData(args gfs.ForwardDataArg, reply *gfs.ForwardDataReply) error {
 	return nil
 }
@@ -242,7 +327,6 @@ func (cs *ChunkServer) RPCCreateChunk(args gfs.CreateChunkArg, reply *gfs.Create
 
 	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.Handle), 10))
 	fp, err := os.OpenFile(chunkPath, os.O_CREATE|os.O_WRONLY, 0644)
-
 	if err != nil {
 		reply.Error = gfs.NewErrorf("open file err[%v]", cs.address, err)
 		log.Errorf("chunkserver[%v], RPCCreateChunk, err[%v]", cs.address, reply.Error)
@@ -282,40 +366,52 @@ func (cs *ChunkServer) RPCReadChunk(args gfs.ReadChunkArg, reply *gfs.ReadChunkR
 		return nil
 	}
 
-	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.Handle), 10))
+	reply.Data = make([]byte, args.Length)
+
+	n, err := cs.readChunk(args.Handle, args.Offset, reply.Data, args.Length)
+	if err == gfs.ErrReadEOF {
+		log.Warnf("chunkserver[%v], RPCReadChunk, err[%v]", cs.address, err)
+	} else if err != nil {
+		log.Errorf("chunkserver[%v], RPCReadChunk, err[%v]", cs.address, err)
+	}
+
+	reply.Length = n
+	reply.Error = err
+
+	return nil
+}
+
+func (cs *ChunkServer) readChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []byte, length int) (n int, err error) {
+	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(handle), 10))
 	fp, err := os.OpenFile(chunkPath, os.O_RDONLY, 0644)
 	if err != nil {
-		reply.Error = gfs.NewErrorf("open file err[%v]", cs.address, err)
-		log.Errorf("chunkserver[%v], RPCReadChunk, err[%v]", cs.address, reply.Error)
-		return nil
+		err = gfs.NewErrorf("open file err[%v]", cs.address, err)
+		log.Errorf("chunkserver[%v], readChunk, err[%v]", cs.address, err)
+		return
 	}
 	defer fp.Close()
 
-	reply.Data = make([]byte, args.Length)
-	reply.Length = args.Length
-	n, err := fp.ReadAt(reply.Data, int64(args.Offset))
+	n, err = fp.ReadAt(data, int64(offset))
 
-	reply.Length = n
+	log.Infof("chunkserver[%v], readChunk, read[%s], bufferLen[%v], readLen[%v]", cs.address, chunkPath, length, n)
 
 	if err == io.EOF {
-		reply.Error = gfs.ErrReadEOF
-		log.Warnf("chunkserver[%v], RPCReadChunk, err[%v]", cs.address, reply.Error)
-		return nil
+		err = gfs.ErrReadEOF
+		log.Warnf("chunkserver[%v], readChunk, err[%v]", cs.address, err)
+		return
 	} else if err != nil {
-		reply.Error = gfs.NewErrorf("read file err[%v]", cs.address, err)
-		log.Errorf("chunkserver[%v], RPCReadChunk, err[%v]", cs.address, reply.Error)
-		return nil
+		err = gfs.NewErrorf("read file err[%v]", cs.address, err)
+		log.Errorf("chunkserver[%v], readChunk, err[%v]", cs.address, err)
+		return
 	}
 
-	if n != args.Length {
-		reply.Error = gfs.ErrReadIncomplete
-		log.Errorf("chunkserver[%v], RPCReadChunk, err[%v]", cs.address, reply.Error)
-		return nil
+	if n != length {
+		err = gfs.ErrReadIncomplete
+		log.Errorf("chunkserver[%v], readChunk, err[%v]", cs.address, err)
+		return
 	}
 
-	log.Infof("chunkserver[%v], RPCReadChunk, read[%s], bufferLen[%v]", cs.address, chunkPath, args.Length)
-
-	return nil
+	return
 }
 
 // RPCWriteChunk is called by client
@@ -352,9 +448,9 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 	for _, v := range args.Secondaries {
 		go func(addr gfs.ServerAddress) {
 			rpcReply := new(gfs.ApplyMutationReply)
-			if errx := util.Call(addr, "ChunkServer.RPCApplyMutation", rpcArgs, rpcReply); errx != nil {
-				log.Errorf("chunkserver[%v], RPCWriteChunk, call err[%v]", cs.address, errx)
-				retErrCh <- errx
+			if err := util.Call(addr, "ChunkServer.RPCApplyMutation", rpcArgs, rpcReply); err != nil {
+				log.Errorf("chunkserver[%v], RPCWriteChunk, call err[%v]", cs.address, err)
+				retErrCh <- err
 				return
 			} else if rpcReply.Error != nil {
 				log.Errorf("chunkserver[%v], RPCWriteChunk, err[%v]", cs.address, rpcReply.Error)
@@ -418,15 +514,15 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 	for _, v := range args.Secondaries {
 		go func(addr gfs.ServerAddress) {
 			rpcReply := new(gfs.ApplyMutationReply)
-			if errx := util.Call(addr, "ChunkServer.RPCApplyMutation", rpcArgs, rpcReply); errx != nil {
-				log.Errorf("chunkserver[%v], RPCAppendChunk, call err[%v]", cs.address, errx)
-				retErrCh <- errx
+			if err := util.Call(addr, "ChunkServer.RPCApplyMutation", rpcArgs, rpcReply); err != nil {
+				log.Errorf("chunkserver[%v], RPCAppendChunk, call err[%v]", cs.address, err)
+				retErrCh <- err
 			} else if rpcReply.Error == gfs.ErrAppendExceedChunkSize {
 				log.Warnf("chunkserver[%v], RPCAppendChunk, err[%v]", cs.address, rpcReply.Error)
-				retErrCh <- reply.Error
+				retErrCh <- rpcReply.Error
 			} else if rpcReply.Error != nil {
 				log.Errorf("chunkserver[%v], RPCAppendChunk, err[%v]", cs.address, rpcReply.Error)
-				retErrCh <- reply.Error
+				retErrCh <- rpcReply.Error
 			} else {
 				retErrCh <- nil
 			}
@@ -493,7 +589,7 @@ func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo) (o
 	info.length = gfs.Offset(int64(info.length) + int64(dataLen))
 
 	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.DataID.Handle), 10))
-	fp, err := os.OpenFile(chunkPath, os.O_WRONLY, 0644)
+	fp, err := os.OpenFile(chunkPath, os.O_WRONLY, gfs.DefaultFilePerm)
 	if err != nil {
 		log.Errorf("chunkserver[%v], applyWrite, err[%v]", cs.address, err)
 		return
@@ -510,6 +606,11 @@ func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo) (o
 
 	if n != dataLen {
 		err = gfs.ErrWriteIncomplete
+		log.Errorf("chunkserver[%v], applyWrite, err[%v]", cs.address, err)
+		return
+	}
+
+	if err = cs.serialize(); err != nil {
 		log.Errorf("chunkserver[%v], applyWrite, err[%v]", cs.address, err)
 		return
 	}
@@ -556,7 +657,7 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 	info.length = gfs.Offset(int64(info.length) + int64(dataLen))
 
 	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.DataID.Handle), 10))
-	fp, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_APPEND, 0644)
+	fp, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_APPEND, gfs.DefaultFilePerm)
 	if err != nil {
 		log.Errorf("chunkserver[%v], applyAppend, err[%v]", cs.address, err)
 		return
@@ -573,6 +674,11 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 
 	if n != dataLen {
 		err = gfs.ErrWriteIncomplete
+		log.Errorf("chunkserver[%v], applyAppend, err[%v]", cs.address, err)
+		return
+	}
+
+	if err = cs.serialize(); err != nil {
 		log.Errorf("chunkserver[%v], applyAppend, err[%v]", cs.address, err)
 		return
 	}
@@ -607,6 +713,11 @@ func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo) (off
 
 	if gfs.Offset(n) != padLen {
 		err = gfs.ErrWriteIncomplete
+		log.Errorf("chunkserver[%v], applyPad, err[%v]", cs.address, err)
+		return
+	}
+
+	if err = cs.serialize(); err != nil {
 		log.Errorf("chunkserver[%v], applyPad, err[%v]", cs.address, err)
 		return
 	}
@@ -647,13 +758,91 @@ func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.Ap
 func (cs *ChunkServer) RPCSendCopy(args gfs.SendCopyArg, reply *gfs.SendCopyReply) error {
 	log.Infof("chunkserver[%v], RPCSendCopy, args[%+v]", cs.address, args)
 
+	data := make([]byte, gfs.MaxChunkSize)
+
+	readLen, err := cs.readChunk(args.Handle, 0, data, gfs.MaxChunkSize)
+	if err == gfs.ErrReadEOF {
+		log.Warnf("chunkserver[%v], RPCSendCopy, err[%v]", cs.address, err)
+		// reply.Error = err
+	} else if err != nil {
+		log.Errorf("chunkserver[%v], RPCSendCopy, err[%v]", cs.address, err)
+		reply.Error = err
+		return nil
+	}
+
+	cs.RLock()
+	defer cs.RUnlock()
+	if _, ok := cs.chunk[args.Handle]; !ok {
+		reply.Error = gfs.ErrNoSuchHandle
+		log.Errorf("chunkserver[%v], RPCSendCopy, err[%v]", cs.address, reply.Error)
+		return nil
+	}
+
+	info := cs.chunk[args.Handle]
+	info.RLock()
+	defer info.RUnlock()
+
+	rpcArgs := gfs.ApplyCopyArg{Handle: args.Handle, Data: data[:readLen], Version: info.version}
+	rpcReply := new(gfs.ApplyCopyReply)
+	err = util.Call(args.Address, "ChunkServer.RPCApplyCopy", rpcArgs, rpcReply)
+	if err != nil {
+		log.Errorf("chunkserver[%v], RPCSendCopy, call err[%v]", cs.address, err)
+		reply.Error = err
+	} else if rpcReply.Error != nil {
+		log.Errorf("chunkserver[%v], RPCSendCopy, err[%v]", cs.address, rpcReply.Error)
+		reply.Error = rpcReply.Error
+	}
+
 	return nil
 }
 
 // RPCApplyCopy is called by another replica
 // rewrite the local version to given copy data
 func (cs *ChunkServer) RPCApplyCopy(args gfs.ApplyCopyArg, reply *gfs.ApplyCopyReply) error {
-	log.Infof("chunkserver[%v], RPCApplyCopy, args[%+v]", cs.address, args)
+	log.Infof("chunkserver[%v], RPCApplyCopy, handle[%v], version[%v]", cs.address, args.Handle, args.Version)
+
+	cs.Lock()
+	defer cs.Unlock()
+
+	if _, ok := cs.chunk[args.Handle]; ok {
+		reply.Error = gfs.ErrChunkExists
+		log.Errorf("chunkserver[%v], RPCApplyCopy, err[%v]", cs.address, reply.Error)
+		return nil
+	}
+
+	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.Handle), 10))
+	fp, err := os.OpenFile(chunkPath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		reply.Error = gfs.NewErrorf("open file err[%v]", cs.address, err)
+		log.Errorf("chunkserver[%v], RPCApplyCopy, err[%v]", cs.address, reply.Error)
+		return nil
+	}
+
+	defer fp.Close()
+
+	dataLen := len(args.Data)
+	n, err := fp.WriteAt(args.Data, 0)
+	if err != nil {
+		log.Errorf("chunkserver[%v], RPCApplyCopy, err[%v]", cs.address, err)
+		reply.Error = gfs.NewErrorf("write file err[%v]", cs.address, err)
+		return nil
+	}
+
+	if n != dataLen {
+		reply.Error = gfs.ErrWriteIncomplete
+		log.Errorf("chunkserver[%v], RPCApplyCopy, err[%v]", cs.address, err)
+		return nil
+	}
+
+	log.Infof("chunkserver[%v], RPCApplyCopy, write[%s], offset[%v]", cs.address, chunkPath, 0)
+
+	cs.chunk[args.Handle] = new(chunkInfo)
+	info := cs.chunk[args.Handle]
+	info.Lock()
+	defer info.Unlock()
+
+	info.length = gfs.Offset(dataLen)
+	info.version = args.Version
 
 	return nil
 }

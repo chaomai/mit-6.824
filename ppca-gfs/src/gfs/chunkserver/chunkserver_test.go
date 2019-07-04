@@ -1,11 +1,15 @@
 package chunkserver
 
 import (
+	"encoding/gob"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+	"sync"
 	"testing"
+
+	"gfs"
 )
 
 const (
@@ -55,4 +59,48 @@ func TestWrite(t *testing.T) {
 	}
 
 	os.Remove(filename)
+}
+
+func TestChunkServer_serialize(t *testing.T) {
+	type chunkInfo struct {
+		sync.RWMutex
+		length   gfs.Offset
+		version  gfs.ChunkVersion
+		checksum []gfs.ChunkCheckSum
+	}
+	chunk := make(map[gfs.ChunkHandle]*chunkInfo)
+
+	info1 := new(chunkInfo)
+	info1.length = 123
+	info1.version = 124
+	chunk[gfs.ChunkHandle(12345)] = info1
+
+	info2 := new(chunkInfo)
+	info2.length = 125
+	info2.version = 126
+	info2.checksum = []gfs.ChunkCheckSum{1234, 12, 341, 234}
+	chunk[gfs.ChunkHandle(12346)] = info2
+
+	persistChunks := make([]gfs.CSChunkInfo, 0)
+
+	for handle, info := range chunk {
+		persistChunks = append(persistChunks, gfs.CSChunkInfo{Handle: handle, Length: info.length, Version: info.version, CheckSum: info.checksum})
+	}
+
+	fp, _ := os.OpenFile(gfs.MetaFileName, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
+	defer fp.Close()
+
+	enc := gob.NewEncoder(fp)
+	enc.Encode(persistChunks)
+
+	fp1, _ := os.OpenFile(gfs.MetaFileName, os.O_CREATE|os.O_RDONLY, gfs.DefaultFilePerm)
+	defer fp1.Close()
+
+	persistChunksRead := make([]gfs.CSChunkInfo, 0)
+	dec := gob.NewDecoder(fp1)
+	dec.Decode(&persistChunksRead)
+
+	t.Logf("%+v", persistChunksRead)
+
+	os.Remove(gfs.MetaFileName)
 }
