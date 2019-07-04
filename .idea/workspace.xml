@@ -2,15 +2,6 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="ea5572a8-b0b5-4978-891c-4b0c4dafc3a1" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/graybox_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/graybox_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/chunk_lease.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/chunk_lease.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/client/client.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/common.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" beforeDir="false" afterPath="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -53,11 +44,11 @@
           </provider>
         </entry>
       </file>
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/ppca-gfs/graybox_test.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="313">
-              <caret line="190" lean-forward="true" selection-start-line="190" selection-end-line="190" />
+            <state relative-caret-position="457">
+              <caret line="704" lean-forward="true" selection-start-line="704" selection-end-line="704" />
             </state>
           </provider>
         </entry>
@@ -80,11 +71,11 @@
           </provider>
         </entry>
       </file>
-      <file pinned="false" current-in-tab="false">
+      <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="257">
-              <caret line="215" column="14" selection-start-line="215" selection-start-column="14" selection-end-line="215" selection-end-column="14" />
+            <state relative-caret-position="185">
+              <caret line="158" column="9" selection-start-line="158" selection-start-column="9" selection-end-line="158" selection-end-column="9" />
             </state>
           </provider>
         </entry>
@@ -203,9 +194,9 @@
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver_test.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/chunkserver/chunkserver.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunk_manager.go" />
-        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go" />
         <option value="$PROJECT_DIR$/ppca-gfs/graybox_test.go" />
+        <option value="$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go" />
       </list>
     </option>
   </component>
@@ -321,7 +312,7 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Go Test.TestPersistentChunkServer in graybox_test.go">
+  <component name="RunManager" selected="Go Test.TestReReplication in graybox_test.go">
     <configuration name="TestAppendChunk in graybox_test.go" type="GoTestRunConfiguration" factoryName="Go Test">
       <module name="mit-6.824" />
       <working_directory value="$PROJECT_DIR$/ppca-gfs" />
@@ -535,27 +526,6 @@
     </recent_temporary>
   </component>
   <component name="TestHistory">
-    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 04m 51s.xml">
-      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 06m 20s.xml">
-      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 07m 27s.xml">
-      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 09m 06s.xml">
-      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 09m 27s.xml">
-      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 10m 18s.xml">
-      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
-    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 11m 13s.xml">
-      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
-    </history-entry>
     <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 12m 48s.xml">
       <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
@@ -563,6 +533,27 @@
       <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
     <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 16m 48s.xml">
+      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 18m 09s.xml">
+      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 18m 34s.xml">
+      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestPersistentChunkServer_in_graybox_test_go - 2019.07.05 at 01h 19m 24s.xml">
+      <configuration name="TestPersistentChunkServer in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestShutdownInAppend_in_graybox_test_go - 2019.07.05 at 01h 22m 42s.xml">
+      <configuration name="TestShutdownInAppend in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestShutdownInAppend_in_graybox_test_go - 2019.07.05 at 01h 23m 02s.xml">
+      <configuration name="TestShutdownInAppend in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 23m 26s.xml">
+      <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestReReplication_in_graybox_test_go - 2019.07.05 at 01h 24m 49s.xml">
       <configuration name="TestReReplication in graybox_test.go" configurationId="GoTestRunConfiguration" />
     </history-entry>
   </component>
@@ -884,13 +875,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="257">
-          <caret line="215" column="14" selection-start-line="215" selection-start-column="14" selection-end-line="215" selection-end-column="14" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/chunkserver_manager.go">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="443">
@@ -914,8 +898,15 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/ppca-gfs/graybox_test.go">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="313">
-          <caret line="190" lean-forward="true" selection-start-line="190" selection-end-line="190" />
+        <state relative-caret-position="457">
+          <caret line="704" lean-forward="true" selection-start-line="704" selection-end-line="704" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/ppca-gfs/src/gfs/master/master.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="185">
+          <caret line="158" column="9" selection-start-line="158" selection-start-column="9" selection-end-line="158" selection-end-column="9" />
         </state>
       </provider>
     </entry>

@@ -154,8 +154,8 @@ func (m *Master) reReplication() {
 				break
 			}
 
-			l, err := m.cm.GetReplicas(handle)
-			log.Infof("reReplication, GetReplicas[%v]", l)
+			// l, err := m.cm.GetReplicas(handle)
+			// log.Debugf("reReplication, GetReplicas[%v]", l)
 		}
 	}
 }
