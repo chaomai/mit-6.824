@@ -121,13 +121,10 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 				le[i] = v.(gfs.ChunkHandle)
 			}
 
-			args := &gfs.HeartbeatArg{
-				Address:         addr,
-				LeaseExtensions: le,
-			}
-
-			if err := util.Call(cs.master, "Master.RPCHeartbeat", args, nil); err != nil {
-				log.Fatal("heartbeat rpc error ", err)
+			rpcArgs := &gfs.HeartbeatArg{Address: addr, LeaseExtensions: le}
+			rpcReply := new(gfs.HeartbeatReply)
+			if err := util.Call(cs.master, "Master.RPCHeartbeat", rpcArgs, rpcReply); err != nil || rpcReply.Error != nil {
+				log.Fatal("heartbeat rpc error ", err, rpcReply.Error)
 				log.Exit(1)
 			}
 

@@ -213,11 +213,24 @@ func (m *Master) BackgroundActivity() (err error) {
 func (m *Master) RPCHeartbeat(args gfs.HeartbeatArg, reply *gfs.HeartbeatReply) error {
 	log.Infof("master[%v], RPCHeartbeat, args[%+v]", m.address, args)
 
-	m.csm.Heartbeat(args.Address)
+	handles, err := m.csm.Heartbeat(args.Address)
+	if err != nil {
+		log.Errorf("master[%v], RPCHeartbeat, err[%v]", m.address, err)
+		reply.Error = err
+		return nil
+	}
+
+	for _, handle := range handles {
+		err = m.cm.RegisterReplica(handle, args.Address)
+		if err != nil {
+			log.Errorf("master[%v], RPCHeartbeat, err[%v]", m.address, err)
+			reply.Error = err
+			return nil
+		}
+	}
 
 	for _, v := range args.LeaseExtensions {
-		err := m.cm.ExtendLease(v, args.Address)
-		if err != nil {
+		if err := m.cm.ExtendLease(v, args.Address); err != nil {
 			reply.Error = err
 			return nil
 		}
