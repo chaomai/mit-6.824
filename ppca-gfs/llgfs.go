@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	log "github.com/Sirupsen/logrus"
 
 	"gfs"
 	"gfs/chunkserver"
 	"gfs/master"
-	"os"
 )
 
 func runMaster() {

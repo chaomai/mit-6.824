@@ -118,10 +118,11 @@ const (
 	DownloadBufferExpire = 2 * time.Minute
 	DownloadBufferTick   = 10 * time.Second
 
-	ClientMaxRetry = 3
+	ClientMaxRetry  = 3
+	ClientRetryWait = 200 * time.Millisecond
 
-	MetaFileName = "gfs-server.meta"
-	DefaultFilePerm     = 0755
+	MetaFileName    = "gfs-server.meta"
+	DefaultFilePerm = 0755
 )
 
 func init() {

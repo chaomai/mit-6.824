@@ -46,5 +46,15 @@ func (cl *chunkLease) getChunkLease(handle gfs.ChunkHandle) (l *master.Lease, er
 		l = cl.leases[handle]
 	}
 
+	log.Infof("getChunkLease, lease[%v]", l)
+
 	return
+}
+
+func (cl *chunkLease) deleteInvalid(handle gfs.ChunkHandle) {
+	cl.Lock()
+	defer cl.Unlock()
+
+	log.Infof("deleteInvalid, handle[%v]", handle)
+	delete(cl.leases, handle)
 }

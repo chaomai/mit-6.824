@@ -1,9 +1,10 @@
 package master
 
 import (
-	"gfs"
 	"sync"
 	"testing"
+
+	"gfs"
 )
 
 func TestGetLeaseHolder(t *testing.T) {

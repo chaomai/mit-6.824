@@ -2,7 +2,6 @@ package client
 
 import (
 	"math"
-	"time"
 
 	"gfs"
 	"gfs/master"
@@ -377,6 +376,7 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 	rpcPDAFReply := new(gfs.PushDataAndForwardReply)
 	err = util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply)
 	if err != nil {
+		c.leases.deleteInvalid(handle)
 		log.Errorf("WriteChunk, call err[%v]", err)
 		return
 	} else if rpcPDAFReply.Error != nil {
@@ -389,6 +389,7 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 	rpcWReply := new(gfs.WriteChunkReply)
 	err = util.Call(lease.Primary, "ChunkServer.RPCWriteChunk", rpcWArgs, rpcWReply)
 	if err != nil {
+		c.leases.deleteInvalid(handle)
 		log.Errorf("WriteChunk, call err[%v]", err)
 		return
 	} else if rpcWReply.Error != nil {
@@ -405,6 +406,11 @@ func (c *Client) WriteChunk(handle gfs.ChunkHandle, offset gfs.Offset, data []by
 // len(data) should be within max append size.
 func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Offset, err error) {
 	for i := 0; i < gfs.ClientMaxRetry; i++ {
+		// if i != 0 {
+		// log.Infof("AppendChunk, full retry[%v], wait[%v]", j, gfs.ClientRetryWait)
+		// 	time.Sleep(gfs.ClientRetryWait)
+		// }
+
 		if len(data) > gfs.MaxAppendSize {
 			err = gfs.ErrAppendExceedMaxAppendSize
 			log.Errorf("AppendChunk, err[%v]", err)
@@ -419,10 +425,16 @@ func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Of
 		}
 
 		for j := 0; j < gfs.ClientMaxRetry; j++ {
+			// if j != 0 {
+			// log.Infof("AppendChunk, retry[%v], wait[%v]", j, gfs.ClientRetryWait)
+			// 	time.Sleep(gfs.ClientRetryWait)
+			// }
+
 			rpcPDAFArgs := gfs.PushDataAndForwardArg{Handle: handle, Data: data, ForwardTo: lease.Secondaries}
 			rpcPDAFReply := new(gfs.PushDataAndForwardReply)
 			err = util.Call(lease.Primary, "ChunkServer.RPCPushDataAndForward", rpcPDAFArgs, rpcPDAFReply)
 			if err != nil {
+				c.leases.deleteInvalid(handle)
 				log.Errorf("AppendChunk, call err[%v]", err)
 				continue
 			} else if rpcPDAFReply.Error != nil {
@@ -435,6 +447,7 @@ func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Of
 			rpcAReply := new(gfs.AppendChunkReply)
 			err = util.Call(lease.Primary, "ChunkServer.RPCAppendChunk", rpcAArgs, rpcAReply)
 			if err != nil {
+				c.leases.deleteInvalid(handle)
 				log.Errorf("AppendChunk, call err[%v]", err)
 				continue
 			} else if rpcAReply.Error == gfs.ErrAppendExceedChunkSize {
@@ -451,9 +464,6 @@ func (c *Client) AppendChunk(handle gfs.ChunkHandle, data []byte) (offset gfs.Of
 
 			return
 		}
-
-		// todo
-		time.Sleep(time.Second)
 	}
 
 	return

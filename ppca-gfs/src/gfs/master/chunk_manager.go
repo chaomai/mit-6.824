@@ -53,18 +53,18 @@ func (cm *chunkManager) getUnFullReplicated() (r []gfs.ChunkHandle) {
 	cm.RLock()
 	defer cm.RUnlock()
 
-	for handle, info := range cm.chunk {
-		info.RLock()
-		if info.location.Size() != gfs.DefaultNumReplicas {
+	for handle, cInfo := range cm.chunk {
+		cInfo.RLock()
+		if cInfo.location.Size() != gfs.DefaultNumReplicas {
 			curReplicas := make([]gfs.ServerAddress, 0)
-			for _, addr := range info.location.GetAll() {
+			for _, addr := range cInfo.location.GetAll() {
 				curReplicas = append(curReplicas, addr.(gfs.ServerAddress))
 			}
 
 			r = append(r, handle)
 		}
 
-		info.RUnlock()
+		cInfo.RUnlock()
 	}
 
 	log.Debugf("getUnFullReplicated, handles[%v]", r)
@@ -98,11 +98,11 @@ func (cm *chunkManager) GetReplicas(handle gfs.ChunkHandle) (loc []gfs.ServerAdd
 		return
 	}
 
-	info := cm.chunk[handle]
-	info.RLock()
-	defer info.RUnlock()
+	cInfo := cm.chunk[handle]
+	cInfo.RLock()
+	defer cInfo.RUnlock()
 
-	for _, e := range info.location.GetAll() {
+	for _, e := range cInfo.location.GetAll() {
 		addr := e.(gfs.ServerAddress)
 		loc = append(loc, addr)
 	}
@@ -137,18 +137,18 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 		return
 	}
 
-	info := cm.chunk[handle]
+	cInfo := cm.chunk[handle]
 
-	info.Lock()
-	defer info.Unlock()
+	cInfo.Lock()
+	defer cInfo.Unlock()
 
-	if info.expire.After(time.Now()) {
+	if cInfo.expire.After(time.Now()) {
 		l = new(Lease)
-		l.Primary = info.primary
-		l.Expire = info.expire
-		l.Version = info.version
+		l.Primary = cInfo.primary
+		l.Expire = cInfo.expire
+		l.Version = cInfo.version
 
-		for _, v := range info.location.GetAll() {
+		for _, v := range cInfo.location.GetAll() {
 			addr := v.(gfs.ServerAddress)
 			if addr != l.Primary {
 				l.Secondaries = append(l.Secondaries, addr)
@@ -158,36 +158,35 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 		return
 	}
 
-	info.primary = info.location.RandomPick().(gfs.ServerAddress)
-	info.expire = time.Now().Add(gfs.LeaseExpire)
-	info.version++
+	cInfo.primary = cInfo.location.RandomPick().(gfs.ServerAddress)
+	cInfo.expire = time.Now().Add(gfs.LeaseExpire)
+	cInfo.version++
 
-	for _, v := range info.location.GetAll() {
+	for _, v := range cInfo.location.GetAll() {
 		addr := v.(gfs.ServerAddress)
 
-		rpcArgs := gfs.GrantLeaseArg{Handle: handle, Version: info.version}
+		rpcArgs := gfs.GrantLeaseArg{Handle: handle, Version: cInfo.version}
 		rpcReply := new(gfs.GrantLeaseReply)
-		errx := util.Call(addr, "ChunkServer.RPCGrantLease", rpcArgs, rpcReply)
-		if errx != nil {
-			log.Errorf("GetLeaseHolder, call err[%v]", errx)
-			err = errx
+		err = util.Call(addr, "ChunkServer.RPCGrantLease", rpcArgs, rpcReply)
+		if err != nil {
+			log.Errorf("GetLeaseHolder, call err[%v]", err)
 			return
 		} else if rpcReply.Error == gfs.ErrStaleVersionAtMaster {
-			log.Warnf("GetLeaseHolder, master chunk version[%v], cs chunk version[%v], err[%v]", info.version, rpcReply.NewestVersion, rpcReply.Error)
-			info.version = rpcReply.NewestVersion
+			log.Warnf("GetLeaseHolder, master chunk version[%v], cs chunk version[%v], err[%v]", cInfo.version, rpcReply.NewestVersion, rpcReply.Error)
+			cInfo.version = rpcReply.NewestVersion
 		} else if rpcReply.Error != nil {
-			log.Errorf("GetLeaseHolder, err[%v]", rpcReply.Error)
 			err = rpcReply.Error
+			log.Errorf("GetLeaseHolder, err[%v]", err)
 			return
 		}
 	}
 
 	l = new(Lease)
-	l.Primary = info.primary
-	l.Expire = info.expire
-	l.Version = info.version
+	l.Primary = cInfo.primary
+	l.Expire = cInfo.expire
+	l.Version = cInfo.version
 
-	for _, v := range info.location.GetAll() {
+	for _, v := range cInfo.location.GetAll() {
 		addr := v.(gfs.ServerAddress)
 		if addr != l.Primary {
 			l.Secondaries = append(l.Secondaries, addr)
@@ -207,11 +206,11 @@ func (cm *chunkManager) ExtendLease(handle gfs.ChunkHandle, primary gfs.ServerAd
 		return gfs.ErrNoSuchHandle
 	}
 
-	info := cm.chunk[handle]
-	info.Lock()
-	defer info.Unlock()
+	cInfo := cm.chunk[handle]
+	cInfo.Lock()
+	defer cInfo.Unlock()
 
-	info.expire = time.Now().Add(gfs.LeaseExpire)
+	cInfo.expire = time.Now().Add(gfs.LeaseExpire)
 
 	return nil
 }
@@ -264,12 +263,18 @@ func (cm *chunkManager) removeServerFromLocation(handle gfs.ChunkHandle, servers
 		return
 	}
 
+	cInfo := cm.chunk[handle]
+	cInfo.Lock()
+	defer cInfo.Unlock()
+
+	cInfo.expire = time.Time{}
+
 	for _, addr := range servers {
 		log.Debugf("removeServerFromLocation, handle[%d], delete[%v]", handle, addr)
-		cm.chunk[handle].location.Delete(addr)
+		cInfo.location.Delete(addr)
 	}
 
-	for _, a := range cm.chunk[handle].location.GetAll() {
+	for _, a := range cInfo.location.GetAll() {
 		loc = append(loc, a.(gfs.ServerAddress))
 	}
 
