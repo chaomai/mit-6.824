@@ -3,11 +3,11 @@ package master
 import (
 	"net"
 	"net/rpc"
+	"sync"
 	"time"
 
 	"gfs"
 	"gfs/util"
-
 	log "github.com/Sirupsen/logrus"
 )
 
@@ -24,6 +24,8 @@ type Master struct {
 
 	toReReplicateCh chan gfs.ChunkHandle
 	deadServerCh    chan []gfs.ServerAddress
+
+	metaMutex sync.RWMutex
 }
 
 // NewAndServe starts a master and returns the pointer to it.
@@ -34,9 +36,9 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 		shutdown:   make(chan struct{}),
 	}
 
-	m.nm = newNamespaceManager()
-	m.cm = newChunkManager()
-	m.csm = newChunkServerManager()
+	m.nm = newNamespaceManager(serverRoot)
+	m.cm = newChunkManager(serverRoot)
+	m.csm = newChunkServerManager(serverRoot)
 
 	m.toReReplicateCh = make(chan gfs.ChunkHandle, 10)
 	m.deadServerCh = make(chan []gfs.ServerAddress, 10)
@@ -49,6 +51,12 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 		log.Exit(1)
 	}
 	m.l = l
+
+	err := m.deserialize()
+	if err != nil {
+		log.Fatalf("master[%v], NewAndServe, err[%v]", m.address, err)
+		log.Exit(1)
+	}
 
 	// RPC Handler
 	go func() {
@@ -97,8 +105,62 @@ func NewAndServe(address gfs.ServerAddress, serverRoot string) *Master {
 	return m
 }
 
+func (m *Master) serialize() error {
+	m.metaMutex.Lock()
+	defer m.metaMutex.Unlock()
+
+	err := m.nm.serialize()
+	if err != nil {
+		log.Errorf("master[%v], serialize, err[%v]", m.address, err)
+		return err
+	}
+
+	err = m.cm.serialize()
+	if err != nil {
+		log.Errorf("master[%v], serialize, err[%v]", m.address, err)
+		return err
+	}
+
+	err = m.csm.serialize()
+	if err != nil {
+		log.Errorf("master[%v], serialize, err[%v]", m.address, err)
+		return err
+	}
+
+	return nil
+}
+
+func (m *Master) deserialize() error {
+	m.metaMutex.Lock()
+	defer m.metaMutex.Unlock()
+
+	err := m.nm.deserialize()
+	if err != nil {
+		log.Errorf("master[%v], deserialize, err[%v]", m.address, err)
+		return err
+	}
+
+	err = m.cm.deserialize()
+	if err != nil {
+		log.Errorf("master[%v], deserialize, err[%v]", m.address, err)
+		return err
+	}
+
+	err = m.csm.deserialize()
+	if err != nil {
+		log.Errorf("master[%v], deserialize, err[%v]", m.address, err)
+		return err
+	}
+
+	return nil
+}
+
 // Shutdown shuts down master
 func (m *Master) Shutdown() {
+	if err := m.serialize(); err != nil {
+		log.Errorf("master[%v], Shutdown, err[%v]", m.address, err)
+	}
+
 	close(m.shutdown)
 }
 
@@ -154,8 +216,8 @@ func (m *Master) reReplication() {
 				break
 			}
 
-			// l, err := m.cm.GetReplicas(handle)
-			// log.Debugf("reReplication, GetReplicas[%v]", l)
+			l, err := m.cm.GetReplicas(handle)
+			log.Debugf("reReplication, after reReplication, GetReplicas[%v]", l)
 		}
 	}
 }
@@ -317,7 +379,7 @@ func (m *Master) RPCGetChunkHandle(args gfs.GetChunkHandleArg, reply *gfs.GetChu
 		return nil
 	}
 
-	parentNode, err := m.nm.lockParents(dirParts, true)
+	parentNode, err := m.nm.goThroughParents(dirParts, true, true, true)
 	if err != nil {
 		reply.Error = err
 		return nil

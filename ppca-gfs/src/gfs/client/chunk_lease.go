@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"gfs"
-	"gfs/master"
 	"gfs/util"
 
 	log "github.com/Sirupsen/logrus"
@@ -14,16 +13,16 @@ import (
 type chunkLease struct {
 	sync.Mutex
 	master gfs.ServerAddress
-	leases map[gfs.ChunkHandle]*master.Lease
+	leases map[gfs.ChunkHandle]*gfs.Lease
 }
 
 func newChunkLease(m gfs.ServerAddress) *chunkLease {
 	return &chunkLease{
 		master: m,
-		leases: make(map[gfs.ChunkHandle]*master.Lease)}
+		leases: make(map[gfs.ChunkHandle]*gfs.Lease)}
 }
 
-func (cl *chunkLease) getChunkLease(handle gfs.ChunkHandle) (l *master.Lease, err error) {
+func (cl *chunkLease) getChunkLease(handle gfs.ChunkHandle) (l *gfs.Lease, err error) {
 	cl.Lock()
 	defer cl.Unlock()
 
@@ -42,7 +41,7 @@ func (cl *chunkLease) getChunkLease(handle gfs.ChunkHandle) (l *master.Lease, er
 			return
 		}
 
-		cl.leases[handle] = &master.Lease{Primary: rpcReply.Primary, Secondaries: rpcReply.Secondaries, Expire: rpcReply.Expire, Version: rpcReply.Version}
+		cl.leases[handle] = &gfs.Lease{Primary: rpcReply.Primary, Secondaries: rpcReply.Secondaries, Expire: rpcReply.Expire, Version: rpcReply.Version}
 		l = cl.leases[handle]
 	}
 

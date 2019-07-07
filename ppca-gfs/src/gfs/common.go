@@ -23,6 +23,8 @@ type DataBufferID struct {
 type PathInfo struct {
 	Name string
 
+	Path string
+
 	// if it is a directory
 	IsDir bool
 
@@ -32,6 +34,26 @@ type PathInfo struct {
 }
 
 type MutationType int
+
+// Lease info
+type Lease struct {
+	Primary     ServerAddress
+	Expire      time.Time
+	Secondaries []ServerAddress
+	Version     ChunkVersion
+}
+
+type CSChunkInfo struct {
+	Handle   ChunkHandle
+	Length   Offset
+	Version  ChunkVersion // version number of the chunk in disk
+	CheckSum []ChunkCheckSum
+}
+
+type ReReplicationInfo struct {
+	Handle      ChunkHandle
+	CurReplicas []ServerAddress
+}
 
 const (
 	MutationWrite = iota
@@ -90,18 +112,6 @@ func (e GError) Error() string {
 	return e.Err
 }
 
-type CSChunkInfo struct {
-	Handle   ChunkHandle
-	Length   Offset
-	Version  ChunkVersion // version number of the chunk in disk
-	CheckSum []ChunkCheckSum
-}
-
-type ReReplicationInfo struct {
-	Handle      ChunkHandle
-	CurReplicas []ServerAddress
-}
-
 // system config
 const (
 	LeaseExpire        = 2 * time.Second
@@ -119,10 +129,13 @@ const (
 	DownloadBufferTick   = 10 * time.Second
 
 	ClientMaxRetry  = 3
-	ClientRetryWait = 200 * time.Millisecond
+	ClientRetryWait = ServerTimeout
 
-	MetaFileName    = "gfs-server.meta"
-	DefaultFilePerm = 0755
+	ChunkServerMetaFileName        = "gfs-server.meta"
+	NamespaceManagerMetaFileName   = "gfs-server.nm.meta"
+	ChunkManagerMetaFileName       = "gfs-server.cm.meta"
+	ChunkServerManagerMetaFileName = "gfs-server.csm.meta"
+	DefaultFilePerm                = 0755
 )
 
 func init() {

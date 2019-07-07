@@ -21,6 +21,9 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+// time=".*LeaseExtensions:\[.*\]\}\]"
+// ^\s*$\n
+
 var (
 	m     *master.Master
 	cs    []*chunkserver.ChunkServer
@@ -885,6 +888,7 @@ func TestDiskError(t *testing.T) {
 	// TODO: check re-replication
 	// check recovery
 	checkWork(p, msg, t)
+	checkReplicas(r1.Handle, len(msg), t)
 
 	errorAll(ch, 5, t)
 }

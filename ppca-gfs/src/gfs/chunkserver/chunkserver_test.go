@@ -87,13 +87,13 @@ func TestChunkServer_serialize(t *testing.T) {
 		persistChunks = append(persistChunks, gfs.CSChunkInfo{Handle: handle, Length: info.length, Version: info.version, CheckSum: info.checksum})
 	}
 
-	fp, _ := os.OpenFile(gfs.MetaFileName, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
+	fp, _ := os.OpenFile(gfs.ChunkServerMetaFileName, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
 	defer fp.Close()
 
 	enc := gob.NewEncoder(fp)
 	enc.Encode(persistChunks)
 
-	fp1, _ := os.OpenFile(gfs.MetaFileName, os.O_CREATE|os.O_RDONLY, gfs.DefaultFilePerm)
+	fp1, _ := os.OpenFile(gfs.ChunkServerMetaFileName, os.O_CREATE|os.O_RDONLY, gfs.DefaultFilePerm)
 	defer fp1.Close()
 
 	persistChunksRead := make([]gfs.CSChunkInfo, 0)
@@ -102,5 +102,5 @@ func TestChunkServer_serialize(t *testing.T) {
 
 	t.Logf("%+v", persistChunksRead)
 
-	os.Remove(gfs.MetaFileName)
+	os.Remove(gfs.ChunkServerMetaFileName)
 }

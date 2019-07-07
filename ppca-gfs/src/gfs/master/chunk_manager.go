@@ -1,6 +1,9 @@
 package master
 
 import (
+	"encoding/gob"
+	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -18,6 +21,9 @@ type chunkManager struct {
 	file  map[gfs.Path]*fileInfo
 
 	numChunkHandle gfs.ChunkHandle
+
+	metaMutex sync.RWMutex
+	metaFile  string
 }
 
 type chunkInfo struct {
@@ -33,20 +39,114 @@ type fileInfo struct {
 	handles []gfs.ChunkHandle
 }
 
-// Lease info
-type Lease struct {
-	Primary     gfs.ServerAddress
-	Expire      time.Time
-	Secondaries []gfs.ServerAddress
-	Version     gfs.ChunkVersion
+type persistChunk struct {
+	Handle   int64
+	Location []string
+	Path     string
+	Version  int64
 }
 
-func newChunkManager() *chunkManager {
+type persistChunkInfo struct {
+	Num   int64
+	Chunk []persistChunk
+}
+
+func newChunkManager(serverRoot string) *chunkManager {
 	cm := &chunkManager{
-		chunk: make(map[gfs.ChunkHandle]*chunkInfo),
-		file:  make(map[gfs.Path]*fileInfo),
+		chunk:    make(map[gfs.ChunkHandle]*chunkInfo),
+		file:     make(map[gfs.Path]*fileInfo),
+		metaFile: path.Join(serverRoot, gfs.ChunkManagerMetaFileName),
 	}
 	return cm
+}
+
+func (cm *chunkManager) serialize() error {
+	persist := persistChunkInfo{}
+	persist.Num = int64(cm.numChunkHandle)
+
+	for handle, cInfo := range cm.chunk {
+		addrs := make([]string, 0)
+
+		for _, addr := range cInfo.location.GetAll() {
+			addrs = append(addrs, string(addr.(gfs.ServerAddress)))
+		}
+
+		persist.Chunk = append(persist.Chunk,
+			persistChunk{Handle: int64(handle),
+				Location: addrs,
+				Path:     string(cInfo.path),
+				Version:  int64(cInfo.version),
+			})
+	}
+
+	fp, err := os.OpenFile(cm.metaFile, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
+	if err != nil {
+		log.Errorf("serialize, err[%v]", err)
+		return err
+	}
+
+	defer fp.Close()
+
+	enc := gob.NewEncoder(fp)
+	err = enc.Encode(persist)
+	if err != nil {
+		log.Errorf("serialize, err[%v]", err)
+		return err
+	}
+
+	return nil
+}
+
+func (cm *chunkManager) deserialize() error {
+	if _, err := os.Stat(cm.metaFile); os.IsNotExist(err) {
+		log.Infof("deserialize, err[%v]", err)
+		return nil
+	} else if err != nil {
+		log.Errorf("deserialize, err[%v]", err)
+		return err
+	}
+
+	fp, err := os.OpenFile(cm.metaFile, os.O_CREATE|os.O_RDONLY, gfs.DefaultFilePerm)
+	if err != nil {
+		log.Errorf("deserialize, err[%v]", err)
+		return err
+	}
+
+	defer fp.Close()
+
+	persist := persistChunkInfo{}
+
+	dec := gob.NewDecoder(fp)
+	err = dec.Decode(&persist)
+	if err != nil {
+		log.Errorf("deserialize, err[%v]", err)
+		return err
+	}
+
+	cm.numChunkHandle = gfs.ChunkHandle(persist.Num)
+
+	for _, chunk := range persist.Chunk {
+		h := gfs.ChunkHandle(chunk.Handle)
+		p := gfs.Path(chunk.Path)
+		if _, ok := cm.chunk[h]; !ok {
+			cm.chunk[h] = new(chunkInfo)
+		}
+
+		for _, addr := range chunk.Location {
+			cm.chunk[h].location.Add(addr)
+		}
+
+		cm.chunk[h].path = p
+		cm.chunk[h].version = gfs.ChunkVersion(chunk.Version)
+
+		if _, ok := cm.file[p]; !ok {
+			cm.file[p] = new(fileInfo)
+		}
+
+		cm.file[p].handles = append(cm.file[p].handles, h)
+	}
+
+	return nil
 }
 
 func (cm *chunkManager) getUnFullReplicated() (r []gfs.ChunkHandle) {
@@ -82,7 +182,13 @@ func (cm *chunkManager) RegisterReplica(handle gfs.ChunkHandle, addr gfs.ServerA
 		cm.chunk[handle] = new(chunkInfo)
 	}
 
-	cm.chunk[handle].location.Add(addr)
+	cInfo := cm.chunk[handle]
+	if cInfo.location.Size() < gfs.DefaultNumReplicas {
+		cm.chunk[handle].location.Add(addr)
+	} else {
+		// should be deleted
+		log.Warnf("RegisterReplica, handle[%d], ignore at[%v]", handle, addr)
+	}
 
 	return nil
 }
@@ -127,7 +233,7 @@ func (cm *chunkManager) GetChunk(path gfs.Path, index gfs.ChunkIndex) (gfs.Chunk
 // GetLeaseHolder returns the chunkserver that hold the lease of a chunk
 // (i.e. primary) and expire time of the lease. If no one has a lease,
 // grants one to a replica it chooses.
-func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err error) {
+func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *gfs.Lease, err error) {
 	cm.RLock()
 	defer cm.RUnlock()
 
@@ -143,7 +249,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 	defer cInfo.Unlock()
 
 	if cInfo.expire.After(time.Now()) {
-		l = new(Lease)
+		l = new(gfs.Lease)
 		l.Primary = cInfo.primary
 		l.Expire = cInfo.expire
 		l.Version = cInfo.version
@@ -181,7 +287,7 @@ func (cm *chunkManager) GetLeaseHolder(handle gfs.ChunkHandle) (l *Lease, err er
 		}
 	}
 
-	l = new(Lease)
+	l = new(gfs.Lease)
 	l.Primary = cInfo.primary
 	l.Expire = cInfo.expire
 	l.Version = cInfo.version

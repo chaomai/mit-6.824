@@ -1,6 +1,9 @@
 package master
 
 import (
+	"encoding/gob"
+	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -14,18 +17,97 @@ import (
 type chunkServerManager struct {
 	sync.RWMutex
 	servers map[gfs.ServerAddress]*chunkServerInfo
-}
 
-func newChunkServerManager() *chunkServerManager {
-	csm := &chunkServerManager{
-		servers: make(map[gfs.ServerAddress]*chunkServerInfo),
-	}
-	return csm
+	metaMutex sync.RWMutex
+	metaFile  string
 }
 
 type chunkServerInfo struct {
 	lastHeartbeat time.Time
 	chunks        map[gfs.ChunkHandle]bool // set of chunks that the chunkserver has
+}
+
+type persistChunkServerInfo map[string][]int64
+
+func newChunkServerManager(serverRoot string) *chunkServerManager {
+	csm := &chunkServerManager{
+		servers:  make(map[gfs.ServerAddress]*chunkServerInfo),
+		metaFile: path.Join(serverRoot, gfs.ChunkServerManagerMetaFileName),
+	}
+	return csm
+}
+
+func (csm *chunkServerManager) serialize() error {
+	persist := make(persistChunkServerInfo)
+
+	for addr, serverInfo := range csm.servers {
+		s := string(addr)
+		if _, ok := persist[s]; !ok {
+			persist[s] = make([]int64, 0)
+		}
+
+		for handle, _ := range serverInfo.chunks {
+			persist[s] = append(persist[s], int64(handle))
+		}
+	}
+
+	fp, err := os.OpenFile(csm.metaFile, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
+	if err != nil {
+		log.Errorf("serialize, err[%v]", err)
+		return err
+	}
+
+	defer fp.Close()
+
+	enc := gob.NewEncoder(fp)
+	err = enc.Encode(persist)
+	if err != nil {
+		log.Errorf("serialize, err[%v]", err)
+		return err
+	}
+
+	return nil
+}
+
+func (csm *chunkServerManager) deserialize() error {
+	if _, err := os.Stat(csm.metaFile); os.IsNotExist(err) {
+		log.Infof("deserialize, err[%v]", err)
+		return nil
+	} else if err != nil {
+		log.Errorf("deserialize, err[%v]", err)
+		return err
+	}
+
+	fp, err := os.OpenFile(csm.metaFile, os.O_CREATE|os.O_RDONLY, gfs.DefaultFilePerm)
+	if err != nil {
+		log.Errorf("deserialize, err[%v]", err)
+		return err
+	}
+
+	defer fp.Close()
+
+	persist := make(persistChunkServerInfo)
+
+	dec := gob.NewDecoder(fp)
+	err = dec.Decode(&persist)
+	if err != nil {
+		log.Errorf("deserialize, err[%v]", err)
+		return err
+	}
+
+	for addr, handles := range persist {
+		s := gfs.ServerAddress(addr)
+		if _, ok := csm.servers[s]; !ok {
+			csm.servers[s] = new(chunkServerInfo)
+		}
+
+		for _, handle := range handles {
+			h := gfs.ChunkHandle(handle)
+			csm.servers[s].chunks[h] = true
+		}
+	}
+
+	return nil
 }
 
 // Heartbeat marks the chunkserver alive for now.
@@ -109,6 +191,8 @@ func (csm *chunkServerManager) ChooseReReplication(handle gfs.ChunkHandle, curRe
 			serversList.Add(s)
 		}
 	}
+
+	log.Debugf("ChooseReReplication, serversList[%v]", serversList)
 
 	i, err := util.Sample(len(curReplicas), 1)
 	if err != nil {

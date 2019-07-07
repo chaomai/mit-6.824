@@ -32,7 +32,7 @@ type ChunkServer struct {
 	chunk                  map[gfs.ChunkHandle]*chunkInfo // chunk information
 
 	metaMutex sync.RWMutex
-	metaRoot  string
+	metaFile  string
 }
 
 type Mutation struct {
@@ -61,7 +61,7 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 		dl:                     newDownloadBuffer(gfs.DownloadBufferExpire, gfs.DownloadBufferTick),
 		pendingLeaseExtensions: new(util.ArraySet),
 		chunk:                  make(map[gfs.ChunkHandle]*chunkInfo),
-		metaRoot:               path.Join(serverRoot, gfs.MetaFileName),
+		metaFile:               path.Join(serverRoot, gfs.ChunkServerMetaFileName),
 	}
 	rpcs := rpc.NewServer()
 	rpcs.Register(cs)
@@ -138,25 +138,28 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 }
 
 func (cs *ChunkServer) serialize() error {
+	cs.RLock()
+	defer cs.RUnlock()
+
 	cs.metaMutex.Lock()
 	defer cs.metaMutex.Unlock()
 
-	persistChunks := make([]gfs.CSChunkInfo, 0)
+	persist := make([]gfs.CSChunkInfo, 0)
 
 	for handle, info := range cs.chunk {
-		persistChunks = append(persistChunks, gfs.CSChunkInfo{Handle: handle, Length: info.length, Version: info.version, CheckSum: info.checksum})
+		persist = append(persist, gfs.CSChunkInfo{Handle: handle, Length: info.length, Version: info.version, CheckSum: info.checksum})
 	}
 
-	fp, err := os.OpenFile(cs.metaRoot, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
+	fp, err := os.OpenFile(cs.metaFile, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
 	if err != nil {
-		log.Errorf("chunkserver[%v], deserialize, err[%v]", cs.address, err)
+		log.Errorf("chunkserver[%v], serialize, err[%v]", cs.address, err)
 		return err
 	}
 
 	defer fp.Close()
 
 	enc := gob.NewEncoder(fp)
-	err = enc.Encode(persistChunks)
+	err = enc.Encode(persist)
 	if err != nil {
 		log.Errorf("chunkserver[%v], serialize, err[%v]", cs.address, err)
 		return err
@@ -166,10 +169,13 @@ func (cs *ChunkServer) serialize() error {
 }
 
 func (cs *ChunkServer) deserialize() error {
+	cs.Lock()
+	defer cs.Unlock()
+
 	cs.metaMutex.Lock()
 	defer cs.metaMutex.Unlock()
 
-	if _, err := os.Stat(cs.metaRoot); os.IsNotExist(err) {
+	if _, err := os.Stat(cs.metaFile); os.IsNotExist(err) {
 		log.Infof("chunkserver[%v], deserialize, err[%v]", cs.address, err)
 		return nil
 	} else if err != nil {
@@ -177,9 +183,8 @@ func (cs *ChunkServer) deserialize() error {
 		return err
 	}
 
-	persistChunks := make([]gfs.CSChunkInfo, 0)
-
-	fp, err := os.OpenFile(cs.metaRoot, os.O_CREATE|os.O_RDONLY, gfs.DefaultFilePerm)
+	persist := make([]gfs.CSChunkInfo, 0)
+	fp, err := os.OpenFile(cs.metaFile, os.O_CREATE|os.O_RDONLY, gfs.DefaultFilePerm)
 	if err != nil {
 		log.Errorf("chunkserver[%v], deserialize, err[%v]", cs.address, err)
 		return err
@@ -188,13 +193,13 @@ func (cs *ChunkServer) deserialize() error {
 	defer fp.Close()
 
 	dec := gob.NewDecoder(fp)
-	err = dec.Decode(&persistChunks)
+	err = dec.Decode(&persist)
 	if err != nil {
 		log.Errorf("chunkserver[%v], deserialize, err[%v]", cs.address, err)
 		return err
 	}
 
-	for _, chunk := range persistChunks {
+	for _, chunk := range persist {
 		info := new(chunkInfo)
 		info.length = chunk.Length
 		info.version = chunk.Version
@@ -208,6 +213,10 @@ func (cs *ChunkServer) deserialize() error {
 
 // Shutdown shuts the chunkserver down
 func (cs *ChunkServer) Shutdown() {
+	if err := cs.serialize(); err != nil {
+		log.Errorf("chunkserver[%v], Shutdown, err[%v]", cs.address, err)
+	}
+
 	if !cs.dead {
 		log.Warnf("chunkserver[%v], ChunkServer %v shuts down", cs.address, cs.address)
 		cs.dead = true
@@ -434,7 +443,7 @@ func (cs *ChunkServer) RPCWriteChunk(args gfs.WriteChunkArg, reply *gfs.WriteChu
 	rpcArgs := gfs.ApplyMutationArg{Mtype: gfs.MutationWrite, Version: args.Version, DataID: args.DataID, Offset: args.Offset}
 
 	go func() {
-		_, err := cs.applyMutation(rpcArgs, info)
+		_, err := cs.applyMutation(rpcArgs, info, true)
 		if err != nil {
 			log.Errorf("chunkserver[%v], RPCWriteChunk, err[%v]", cs.address, err)
 		}
@@ -494,19 +503,16 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 	retErrCh := make(chan error, gfs.DefaultNumReplicas)
 	rpcArgs := gfs.ApplyMutationArg{Mtype: gfs.MutationAppend, Version: args.Version, DataID: args.DataID}
 
-	var offset gfs.Offset = 0
+	offset, err := cs.applyMutation(rpcArgs, info, true)
+	if err == gfs.ErrAppendExceedChunkSize {
+		log.Warnf("chunkserver[%v], RPCAppendChunk, err[%v]", cs.address, err)
+	} else if err != nil {
+		log.Errorf("chunkserver[%v], RPCAppendChunk, err[%v]", cs.address, err)
+	}
 
-	go func() {
-		var err error
-		offset, err = cs.applyMutation(rpcArgs, info)
-		if err == gfs.ErrAppendExceedChunkSize {
-			log.Warnf("chunkserver[%v], RPCAppendChunk, err[%v]", cs.address, err)
-		} else if err != nil {
-			log.Errorf("chunkserver[%v], RPCAppendChunk, err[%v]", cs.address, err)
-		}
+	retErrCh <- err
 
-		retErrCh <- err
-	}()
+	rpcArgs.Offset = offset
 
 	for _, v := range args.Secondaries {
 		go func(addr gfs.ServerAddress) {
@@ -538,20 +544,7 @@ func (cs *ChunkServer) RPCAppendChunk(args gfs.AppendChunkArg, reply *gfs.Append
 	return nil
 }
 
-func (cs *ChunkServer) applyMutation(args gfs.ApplyMutationArg, info *chunkInfo) (offset gfs.Offset, err error) {
-	switch args.Mtype {
-	case gfs.MutationWrite:
-		return cs.applyWrite(args, info)
-	case gfs.MutationAppend:
-		return cs.applyAppend(args, info)
-	case gfs.MutationPad:
-		return cs.applyPad(args, info)
-	default:
-		return
-	}
-}
-
-func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo) (offset gfs.Offset, err error) {
+func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo, isPrimary bool) (offset gfs.Offset, err error) {
 	data, ok := cs.dl.Get(args.DataID)
 	if !ok {
 		err = gfs.ErrNoSuchDataID
@@ -570,7 +563,7 @@ func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo) (o
 		log.Infof("chunkserver[%v], applyWrite, pad chunk, err[%v]", cs.address, gfs.ErrWriteExceedFileSize)
 
 		padArgs := gfs.ApplyMutationArg{Mtype: gfs.MutationPad, Version: args.Version, DataID: args.DataID, Offset: args.Offset}
-		_, err = cs.applyPad(padArgs, info)
+		_, err = cs.applyPad(padArgs, info, true)
 		if err != nil {
 			log.Errorf("chunkserver[%v], applyWrite, err[%v]", cs.address, err)
 			return
@@ -615,7 +608,7 @@ func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo) (o
 	return
 }
 
-func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (offset gfs.Offset, err error) {
+func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo, isPrimary bool) (offset gfs.Offset, err error) {
 	data, ok := cs.dl.Get(args.DataID)
 	if !ok {
 		err = gfs.ErrNoSuchDataID
@@ -632,7 +625,7 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 
 	if int64(info.length)+int64(dataLen) > gfs.MaxChunkSize {
 		padArgs := gfs.ApplyMutationArg{Mtype: gfs.MutationPad, Version: args.Version, DataID: args.DataID}
-		_, err = cs.applyPad(padArgs, info)
+		_, err = cs.applyPad(padArgs, info, isPrimary)
 
 		if err != nil {
 			log.Errorf("chunkserver[%v], applyAppend, err[%v]", cs.address, err)
@@ -650,8 +643,13 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 		return
 	}
 
-	offset = info.length
-	info.length = gfs.Offset(int64(info.length) + int64(dataLen))
+	if isPrimary {
+		offset = info.length
+	} else {
+		offset = args.Offset
+	}
+
+	info.length = offset + gfs.Offset(dataLen)
 
 	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.DataID.Handle), 10))
 	fp, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_APPEND, gfs.DefaultFilePerm)
@@ -663,7 +661,7 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 
 	log.Infof("chunkserver[%v], applyAppend, write[%s]", cs.address, chunkPath)
 
-	n, err := fp.Write(data)
+	n, err := fp.WriteAt(data, int64(offset))
 	if err != nil {
 		log.Errorf("chunkserver[%v], applyAppend, err[%v]", cs.address, err)
 		return
@@ -683,7 +681,13 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo) (
 	return
 }
 
-func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo) (offset gfs.Offset, err error) {
+func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo, isPrimary bool) (offset gfs.Offset, err error) {
+	if info.version != args.Version {
+		err = gfs.ErrStaleVersionAtChunkServer
+		log.Errorf("chunkserver[%v], applyAppend, err[%v]", cs.address, err)
+		return
+	}
+
 	var padLen gfs.Offset = 0
 	if args.Offset != 0 {
 		padLen = args.Offset - info.length
@@ -691,9 +695,15 @@ func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo) (off
 		padLen = gfs.MaxChunkSize - info.length
 	}
 
-	info.length = info.length + padLen
-
 	padData := make([]byte, padLen)
+
+	if isPrimary {
+		offset = info.length
+	} else {
+		offset = args.Offset
+	}
+
+	info.length = offset + gfs.Offset(padLen)
 
 	chunkPath := path.Join(cs.serverRoot, strconv.FormatInt(int64(args.DataID.Handle), 10))
 	fp, err := os.OpenFile(chunkPath, os.O_WRONLY|os.O_APPEND, 0644)
@@ -703,7 +713,7 @@ func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo) (off
 	}
 	defer fp.Close()
 
-	n, err := fp.Write(padData)
+	n, err := fp.WriteAt(padData, int64(offset))
 	if err != nil {
 		log.Errorf("chunkserver[%v], applyPad, err[%v]", cs.address, err)
 	}
@@ -720,6 +730,19 @@ func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo) (off
 	}
 
 	return
+}
+
+func (cs *ChunkServer) applyMutation(args gfs.ApplyMutationArg, info *chunkInfo, isPrimary bool) (offset gfs.Offset, err error) {
+	switch args.Mtype {
+	case gfs.MutationWrite:
+		return cs.applyWrite(args, info, isPrimary)
+	case gfs.MutationAppend:
+		return cs.applyAppend(args, info, isPrimary)
+	case gfs.MutationPad:
+		return cs.applyPad(args, info, isPrimary)
+	default:
+		return
+	}
 }
 
 // RPCApplyMutation is called by primary to apply mutations
@@ -740,7 +763,7 @@ func (cs *ChunkServer) RPCApplyMutation(args gfs.ApplyMutationArg, reply *gfs.Ap
 
 	rpcArgs := gfs.ApplyMutationArg{Mtype: args.Mtype, Version: args.Version, DataID: args.DataID, Offset: args.Offset}
 
-	if _, err := cs.applyMutation(rpcArgs, info); err == gfs.ErrAppendExceedChunkSize {
+	if _, err := cs.applyMutation(rpcArgs, info, false); err == gfs.ErrAppendExceedChunkSize {
 		reply.Error = err
 		log.Warnf("chunkserver[%v], RPCApplyMutation, err[%v]", cs.address, err)
 	} else if err != nil {
