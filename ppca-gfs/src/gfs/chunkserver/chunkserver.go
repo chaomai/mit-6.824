@@ -31,7 +31,7 @@ type ChunkServer struct {
 	pendingLeaseExtensions *util.ArraySet                 // pending lease extension
 	chunk                  map[gfs.ChunkHandle]*chunkInfo // chunk information
 
-	metaMutex sync.RWMutex
+	metaMutex sync.Mutex
 	metaFile  string
 }
 
@@ -138,9 +138,6 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 }
 
 func (cs *ChunkServer) serialize() error {
-	cs.RLock()
-	defer cs.RUnlock()
-
 	cs.metaMutex.Lock()
 	defer cs.metaMutex.Unlock()
 
@@ -213,6 +210,9 @@ func (cs *ChunkServer) deserialize() error {
 
 // Shutdown shuts the chunkserver down
 func (cs *ChunkServer) Shutdown() {
+	cs.RLock()
+	defer cs.RUnlock()
+
 	if err := cs.serialize(); err != nil {
 		log.Errorf("chunkserver[%v], Shutdown, err[%v]", cs.address, err)
 	}

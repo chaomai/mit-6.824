@@ -14,7 +14,9 @@ import (
 
 type namespaceManager struct {
 	root     *nsTree
-	metaFile string
+
+	metaMutex sync.Mutex
+	metaFile  string
 }
 
 type nsTree struct {
@@ -106,6 +108,9 @@ func (nm *namespaceManager) iterate(p gfs.Path, f func(*iterateNode) error) erro
 }
 
 func (nm *namespaceManager) serialize() error {
+	nm.metaMutex.Lock()
+	defer nm.metaMutex.Unlock()
+
 	persist := make([]persistNode, 0)
 
 	err := nm.iterate("/", func(node *iterateNode) error {
@@ -137,6 +142,9 @@ func (nm *namespaceManager) serialize() error {
 }
 
 func (nm *namespaceManager) deserialize() error {
+	nm.metaMutex.Lock()
+	defer nm.metaMutex.Unlock()
+
 	if _, err := os.Stat(nm.metaFile); os.IsNotExist(err) {
 		log.Infof("deserialize, err[%v]", err)
 		return nil

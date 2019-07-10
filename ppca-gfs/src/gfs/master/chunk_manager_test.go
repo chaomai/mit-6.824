@@ -1,6 +1,7 @@
 package master
 
 import (
+	"io/ioutil"
 	"sync"
 	"testing"
 
@@ -8,7 +9,10 @@ import (
 )
 
 func TestGetLeaseHolder(t *testing.T) {
-	cm := newChunkManager()
+	root, _ := ioutil.TempDir("", "gfs-")
+	t.Log(root)
+	cm := newChunkManager(root)
+
 	info := new(chunkInfo)
 	info.location.Add(gfs.ServerAddress("1"))
 	info.location.Add(gfs.ServerAddress("2"))

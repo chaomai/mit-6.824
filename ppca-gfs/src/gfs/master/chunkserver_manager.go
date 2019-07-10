@@ -18,7 +18,7 @@ type chunkServerManager struct {
 	sync.RWMutex
 	servers map[gfs.ServerAddress]*chunkServerInfo
 
-	metaMutex sync.RWMutex
+	metaMutex sync.Mutex
 	metaFile  string
 }
 

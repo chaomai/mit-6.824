@@ -25,7 +25,7 @@ type Master struct {
 	toReReplicateCh chan gfs.ChunkHandle
 	deadServerCh    chan []gfs.ServerAddress
 
-	metaMutex sync.RWMutex
+	metaMutex sync.Mutex
 }
 
 // NewAndServe starts a master and returns the pointer to it.

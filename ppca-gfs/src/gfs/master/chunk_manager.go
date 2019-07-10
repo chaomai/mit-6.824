@@ -22,7 +22,7 @@ type chunkManager struct {
 
 	numChunkHandle gfs.ChunkHandle
 
-	metaMutex sync.RWMutex
+	metaMutex sync.Mutex
 	metaFile  string
 }
 
@@ -61,6 +61,9 @@ func newChunkManager(serverRoot string) *chunkManager {
 }
 
 func (cm *chunkManager) serialize() error {
+	cm.metaMutex.Lock()
+	defer cm.metaMutex.Unlock()
+
 	persist := persistChunkInfo{}
 	persist.Num = int64(cm.numChunkHandle)
 
@@ -98,6 +101,9 @@ func (cm *chunkManager) serialize() error {
 }
 
 func (cm *chunkManager) deserialize() error {
+	cm.metaMutex.Lock()
+	defer cm.metaMutex.Unlock()
+
 	if _, err := os.Stat(cm.metaFile); os.IsNotExist(err) {
 		log.Infof("deserialize, err[%v]", err)
 		return nil
