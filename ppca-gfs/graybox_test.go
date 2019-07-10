@@ -842,13 +842,13 @@ func TestPersistentMaster(t *testing.T) {
 	time.Sleep(2 * gfs.ServerTimeout)
 
 	// restart
-	// m = master.NewAndServe(mAdd, path.Join(root, "m"))
-	// time.Sleep(2 * gfs.ServerTimeout)
-	//
-	// // check recovery
-	// checkWork(p, msg, t)
-	//
-	// errorAll(ch, 3, t)
+	m = master.NewAndServe(mAdd, path.Join(root, "m"))
+	time.Sleep(2 * gfs.ServerTimeout)
+
+	// check recovery
+	checkWork(p, msg, t)
+
+	errorAll(ch, 3, t)
 }
 
 // delete all files in two chunkservers ...
