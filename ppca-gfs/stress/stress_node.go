@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"gfs_stress"
-	"log"
 	"os"
 	"strings"
+
+	"gfs_stress"
+	log "github.com/Sirupsen/logrus"
 )
 
 func readConfigFile(path string) gfs_stress.Config {
@@ -99,5 +100,6 @@ func main() {
 		os.Exit(1)
 	}
 
+	log.SetLevel(log.DebugLevel)
 	gfs_stress.Run(cfg)
 }

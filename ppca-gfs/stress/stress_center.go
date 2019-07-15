@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"gfs"
-	"gfs_stress"
 	"log"
 	"math/rand"
 	"net"
@@ -15,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gfs"
+	"gfs_stress"
 )
 
 /**********************************************************

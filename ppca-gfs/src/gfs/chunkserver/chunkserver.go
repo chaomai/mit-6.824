@@ -110,7 +110,7 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 			default:
 			}
 
-			if err := cs.serialize(); err != nil {
+			if err := cs.serialize(true); err != nil {
 				log.Errorf("chunkserver[%v], NewAndServe, err[%v]", cs.address, err)
 				return
 			}
@@ -137,14 +137,27 @@ func NewAndServe(addr, masterAddr gfs.ServerAddress, serverRoot string) *ChunkSe
 	return cs
 }
 
-func (cs *ChunkServer) serialize() error {
+func (cs *ChunkServer) serialize(isLock bool) error {
+	if isLock {
+		cs.RLock()
+		defer cs.RUnlock()
+	}
+
 	cs.metaMutex.Lock()
 	defer cs.metaMutex.Unlock()
 
 	persist := make([]gfs.CSChunkInfo, 0)
 
 	for handle, info := range cs.chunk {
+		if isLock {
+			info.RLock()
+		}
+
 		persist = append(persist, gfs.CSChunkInfo{Handle: handle, Length: info.length, Version: info.version, CheckSum: info.checksum})
+
+		if isLock {
+			info.RUnlock()
+		}
 	}
 
 	fp, err := os.OpenFile(cs.metaFile, os.O_CREATE|os.O_WRONLY, gfs.DefaultFilePerm)
@@ -210,10 +223,7 @@ func (cs *ChunkServer) deserialize() error {
 
 // Shutdown shuts the chunkserver down
 func (cs *ChunkServer) Shutdown() {
-	cs.RLock()
-	defer cs.RUnlock()
-
-	if err := cs.serialize(); err != nil {
+	if err := cs.serialize(true); err != nil {
 		log.Errorf("chunkserver[%v], Shutdown, err[%v]", cs.address, err)
 	}
 
@@ -600,7 +610,7 @@ func (cs *ChunkServer) applyWrite(args gfs.ApplyMutationArg, info *chunkInfo, is
 		return
 	}
 
-	if err = cs.serialize(); err != nil {
+	if err = cs.serialize(false); err != nil {
 		log.Errorf("chunkserver[%v], applyWrite, err[%v]", cs.address, err)
 		return
 	}
@@ -673,7 +683,7 @@ func (cs *ChunkServer) applyAppend(args gfs.ApplyMutationArg, info *chunkInfo, i
 		return
 	}
 
-	if err = cs.serialize(); err != nil {
+	if err = cs.serialize(false); err != nil {
 		log.Errorf("chunkserver[%v], applyAppend, err[%v]", cs.address, err)
 		return
 	}
@@ -724,7 +734,7 @@ func (cs *ChunkServer) applyPad(args gfs.ApplyMutationArg, info *chunkInfo, isPr
 		return
 	}
 
-	if err = cs.serialize(); err != nil {
+	if err = cs.serialize(false); err != nil {
 		log.Errorf("chunkserver[%v], applyPad, err[%v]", cs.address, err)
 		return
 	}
