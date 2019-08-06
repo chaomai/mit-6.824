@@ -433,7 +433,6 @@ func (rf *Raft) doElection(origTerm int, peersEntryInfo []RequestVoteArgs) {
 		log.Printf(", me[%d], state[%s], got majority vote[%d], change candidate to leader\n", rf.me, rf.state, grantedVote)
 		rf.state = Leader
 
-		log.Printf(", me[%d], state[%s], start heart beat\n", rf.me, rf.state)
 		ctx, cancel := context.WithCancel(context.Background())
 		rf.heartbeatStopCh <- cancel
 		go rf.heartbeatTickerFunc(ctx)
@@ -524,7 +523,8 @@ func (rf *Raft) initializeLeaderState() {
 	rf.nextIndex = make([]int, peersNum, peersNum)
 	rf.matchIndex = make([]int, peersNum, peersNum)
 
-	lastLogIndex := len(rf.entries)
+	numEntries := len(rf.entries)
+	lastLogIndex := numEntries - 1
 
 	for idx := range rf.nextIndex {
 		rf.nextIndex[idx] = lastLogIndex + 1
@@ -543,6 +543,10 @@ func (rf *Raft) tryStopHeartbeat() {
 }
 
 func (rf *Raft) heartbeatTickerFunc(ctx context.Context) {
+	// send first heartbeat immediately
+	log.Printf(", me[%d], state[%s], start heartbeat\n", rf.me, rf.state)
+	rf.eventCh <- Event{eventType: HeartbeatTick}
+
 	for {
 		select {
 		case <-ctx.Done():
