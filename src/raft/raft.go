@@ -228,7 +228,10 @@ type AppendEntriesReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
+	rf.mu.Lock()
 	log.Printf(", me[%d], state[%s], receive RequestVote[%+v]\n", rf.me, rf.state, args)
+	rf.mu.Unlock()
+
 	ch := make(chan RequestVoteReply, 1)
 	eventContent := RPCEvent{args: *args, ch: ch}
 	event := Event{eventType: RequestVoteRPC, eventContent: eventContent}
@@ -289,7 +292,10 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.mu.Lock()
 	log.Printf(", me[%d], state[%s], receive AppendEntries[%+v]\n", rf.me, rf.state, args)
+	rf.mu.Unlock()
+
 	ch := make(chan AppendEntriesReply, 1)
 	eventContent := RPCEvent{args: *args, ch: ch}
 	event := Event{eventType: AppendEntriesRPC, eventContent: eventContent}
@@ -364,7 +370,11 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 		// entries may become invalid if leader changed
 		// if it's invalid, then the new term will ensure that following update won't happen
 		rf.mu.Lock()
+
 		command, term := rf.getLogEntry(nextIndex)
+		curTerm := rf.currentTerm
+		curCommitIdx := rf.commitIndex
+
 		rf.mu.Unlock()
 
 		var entries []LogEntry
@@ -377,12 +387,12 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 
 		args := AppendEntriesArgs{
 			TraceId:      rand.Uint32(),
-			Term:         rf.currentTerm,
+			Term:         curTerm,
 			LeaderId:     rf.me,
 			PrevLogIndex: prevLogIndex,
 			PrevLogTerm:  prevLogTerm,
 			Entries:      entries,
-			LeaderCommit: rf.commitIndex,
+			LeaderCommit: curCommitIdx,
 		}
 
 		reply := AppendEntriesReply{}
@@ -520,10 +530,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = lastLogIndex
 
 	numPeers := len(rf.peers)
-	numReplicated := 1
+	numReplicated := 1 // self is replicated
 	cl := sync.Mutex{}
 	cond := sync.NewCond(&cl)
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	for idx := range rf.peers {
@@ -611,36 +620,54 @@ func (rf *Raft) resetElectionTimer() {
 	log.Printf(", me[%d], state[%s], reset election timer to [%s]\n", rf.me, rf.state, d)
 }
 
-func (rf *Raft) doElection(origTerm int, peersEntryInfo []RequestVoteArgs) {
+func (rf *Raft) doSendRequestVote(server int, voteReplyCh chan RequestVoteReply, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	// if term is changed invalid, then the new term will ensure that following update won't happen
+	rf.mu.Lock()
+
+	lastLogIndex, lastLogTerm := rf.getLastLogInfo()
+	curTerm := rf.currentTerm
+
+	rf.mu.Unlock()
+
+	args := RequestVoteArgs{
+		TraceId:      rand.Uint32(),
+		Term:         curTerm,
+		CandidateId:  rf.me,
+		LastLogIndex: lastLogIndex,
+		LastLogTerm:  lastLogTerm,
+	}
+
+	reply := RequestVoteReply{}
+
+	log.Printf(", me[%d], state[%s], sendRequestVote[%+v] to [%d]\n", rf.me, rf.state, args, server)
+	if ok := rf.sendRequestVote(server, &args, &reply); !ok {
+		log.Printf(", me[%d], state[%s], sendRequestVote[%+v] to [%d] error\n", rf.me, rf.state, args, server)
+	} else {
+		log.Printf(", me[%d], state[%s], sendRequestVote reply[%+v]\n", rf.me, rf.state, reply)
+		voteReplyCh <- reply
+	}
+}
+
+func (rf *Raft) election(origTerm int) {
 	// vote self
 	grantedVote := 1
 
 	rf.resetElectionTimer()
 
 	// send RequestVoteRPC RPCs
-	num := len(peersEntryInfo)
-	voteReplyCh := make(chan RequestVoteReply, num)
+	numPeers := len(rf.peers)
+	voteReplyCh := make(chan RequestVoteReply, numPeers)
 	wg := sync.WaitGroup{}
-	wg.Add(num)
+	wg.Add(numPeers - 1) // self is voted
 
-	for i, v := range peersEntryInfo {
-		go func(idx int, args RequestVoteArgs) {
-			defer wg.Done()
+	for idx := range rf.peers {
+		if idx == rf.me {
+			continue
+		}
 
-			if idx == rf.me {
-				return
-			}
-
-			reply := RequestVoteReply{}
-
-			log.Printf(", me[%d], state[%s], sendRequestVote[%+v] to [%d]\n", rf.me, rf.state, args, idx)
-			if ok := rf.sendRequestVote(idx, &args, &reply); !ok {
-				log.Printf(", me[%d], state[%s], sendRequestVote[%+v] to [%d] error\n", rf.me, rf.state, args, idx)
-			} else {
-				log.Printf(", me[%d], state[%s], sendRequestVote reply[%+v]\n", rf.me, rf.state, reply)
-				voteReplyCh <- reply
-			}
-		}(i, v)
+		go rf.doSendRequestVote(idx, voteReplyCh, &wg)
 	}
 
 	wg.Wait()
@@ -674,29 +701,6 @@ func (rf *Raft) doElection(origTerm int, peersEntryInfo []RequestVoteArgs) {
 	} else {
 		log.Printf(", me[%d], state[%s], cannot get majority vote[%d]\n", rf.me, rf.state, grantedVote)
 	}
-}
-
-func (rf *Raft) prepareElection() (peersEntryInfo []RequestVoteArgs) {
-	for idx := range rf.peers {
-		if idx == rf.me {
-			peersEntryInfo = append(peersEntryInfo, RequestVoteArgs{})
-			continue
-		}
-
-		lastLogIndex, lastLogTerm := rf.getLastLogInfo()
-
-		args := RequestVoteArgs{
-			TraceId:      rand.Uint32(),
-			Term:         rf.currentTerm,
-			CandidateId:  rf.me,
-			LastLogIndex: lastLogIndex,
-			LastLogTerm:  lastLogTerm,
-		}
-
-		peersEntryInfo = append(peersEntryInfo, args)
-	}
-
-	return
 }
 
 func (rf *Raft) checkToGrantVote(term int, lastLogIndex int, lastLogTerm int, candidateId int) (reply RequestVoteReply) {
@@ -983,11 +987,13 @@ func (rf *Raft) followerStateHandler(event Event) {
 		rf.currentTerm++
 		rf.votedFor = rf.me
 
-		peersEntryInfo := rf.prepareElection()
+		// peersEntryInfo := rf.prepareElection()
 
 		rf.mu.Unlock()
 
-		go rf.doElection(origTerm, peersEntryInfo)
+		go rf.election(origTerm)
+
+		// go rf.doElection(origTerm, peersEntryInfo)
 
 	case RequestVoteRPC:
 		rpcEvent := event.eventContent.(RPCEvent)
@@ -1036,11 +1042,13 @@ func (rf *Raft) candidateStateHandler(event Event) {
 		rf.currentTerm++
 		rf.votedFor = rf.me
 
-		peersEntryInfo := rf.prepareElection()
+		// peersEntryInfo := rf.prepareElection()
 
 		rf.mu.Unlock()
 
-		go rf.doElection(origTerm, peersEntryInfo)
+		go rf.election(origTerm)
+
+		// go rf.doElection(origTerm, peersEntryInfo)
 
 	case RequestVoteRPC:
 		rpcEvent := event.eventContent.(RPCEvent)
