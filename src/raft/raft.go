@@ -463,7 +463,7 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 		numPeers := len(rf.peers)
 		if 2*numMatch > numPeers && rf.entries[nextIndex].Term == rf.currentTerm {
 			rf.commitIndex = nextIndex
-			log.Printf(", me[%d], state[%s], replicate on majority and has current term, update commitIndex to [%d]", rf.me, rf.state, rf.commitIndex)
+			log.Printf(", me[%d], state[%s], replicate on majority[%d] and has current term, update commitIndex to [%d]", rf.me, rf.state, numMatch, rf.commitIndex)
 		}
 
 		rf.nextIndex[server]++
@@ -862,8 +862,9 @@ func (rf *Raft) doCheckRPC(term int) bool {
 		if rf.state != Follower {
 			log.Printf(", me[%d], state[%s], term is old, change to follower\n", rf.me, rf.state)
 			rf.state = Follower
-			rf.votedFor = NullPeerIndex
 		}
+
+		rf.votedFor = NullPeerIndex
 
 		return false
 	}

@@ -48,6 +48,8 @@ func TestInitialElection2A(t *testing.T) {
 }
 
 func TestReElection2A(t *testing.T) {
+	// should not modify number of server
+	// the later test that disconnects 2 servers rely on this conf
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
