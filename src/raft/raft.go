@@ -365,12 +365,11 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 	nextIndex := origNextIndex
 
 	for nextIndex <= toReplicateIndex {
-		prevLogIndex, prevLogTerm := rf.getPrevLogInfo(nextIndex)
-
 		// entries may become invalid if leader changed
 		// if it's invalid, then the new term will ensure that following update won't happen
 		rf.mu.Lock()
 
+		prevLogIndex, prevLogTerm := rf.getPrevLogInfo(nextIndex)
 		command, term := rf.getLogEntry(nextIndex)
 		curTerm := rf.currentTerm
 		curCommitIdx := rf.commitIndex
@@ -415,7 +414,7 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 				continue
 			}
 		} else {
-			log.Printf(", me[%d], state[%s], send append entries reply[%+v]\n", rf.me, rf.state, reply)
+			log.Printf(", me[%d], state[%s], send append entries reply[%+v] from [%d]\n", rf.me, rf.state, reply, server)
 		}
 
 		if rf.currentTerm != origTerm {
@@ -446,6 +445,7 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 
 		if rf.nextIndex[server] != nextIndex {
 			log.Printf(", me[%d], state[%s], nextIndex[%d] of [%d] is changed since[%d] start append, stop\n", rf.me, rf.state, rf.nextIndex[server], server, nextIndex)
+
 			rf.mu.Unlock()
 			return
 		}
@@ -462,8 +462,8 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 
 		numPeers := len(rf.peers)
 		if 2*numMatch > numPeers && rf.entries[nextIndex].Term == rf.currentTerm {
+			log.Printf(", me[%d], state[%s], replicate on majority[%d] and has current term, update commitIndex to [%d]", rf.me, rf.state, numMatch, nextIndex)
 			rf.commitIndex = nextIndex
-			log.Printf(", me[%d], state[%s], replicate on majority[%d] and has current term, update commitIndex to [%d]", rf.me, rf.state, numMatch, rf.commitIndex)
 		}
 
 		rf.nextIndex[server]++
@@ -641,11 +641,11 @@ func (rf *Raft) doSendRequestVote(server int, voteReplyCh chan RequestVoteReply,
 
 	reply := RequestVoteReply{}
 
-	log.Printf(", me[%d], state[%s], sendRequestVote[%+v] to [%d]\n", rf.me, rf.state, args, server)
+	log.Printf(", me[%d], state[%s], request vote[%+v] to [%d]\n", rf.me, rf.state, args, server)
 	if ok := rf.sendRequestVote(server, &args, &reply); !ok {
-		log.Printf(", me[%d], state[%s], sendRequestVote[%+v] to [%d] error\n", rf.me, rf.state, args, server)
+		log.Printf(", me[%d], state[%s], request vote[%+v] to [%d] error\n", rf.me, rf.state, args, server)
 	} else {
-		log.Printf(", me[%d], state[%s], sendRequestVote reply[%+v]\n", rf.me, rf.state, reply)
+		log.Printf(", me[%d], state[%s], request vote reply[%+v] from [%d]\n", rf.me, rf.state, reply, server)
 		voteReplyCh <- reply
 	}
 }
@@ -759,7 +759,6 @@ func (rf *Raft) tryStopHeartbeat() {
 func (rf *Raft) heartbeatTickerFunc(ctx context.Context) {
 	// send first heartbeat immediately
 	log.Printf(", me[%d], state[%s], start heartbeat\n", rf.me, rf.state)
-	rf.eventCh <- Event{eventType: HeartbeatTick}
 
 	for {
 		select {
@@ -773,91 +772,143 @@ func (rf *Raft) heartbeatTickerFunc(ctx context.Context) {
 	}
 }
 
-func (rf *Raft) doHeartbeat(origTerm int, peersEntryInfo []AppendEntriesArgs) {
-	numPeers := len(rf.peers)
-	heartbeatReplyCh := make(chan AppendEntriesReply, numPeers)
-	wg := sync.WaitGroup{}
-	wg.Add(numPeers)
+func (rf *Raft) doHeartbeat(origTerm int, origNextIndex int, actualNextIndex int, server int) {
+	nextIndex := origNextIndex
+	isFailed := false
 
-	for i, v := range peersEntryInfo {
-		go func(idx int, args AppendEntriesArgs) {
-			defer wg.Done()
-			if idx == rf.me {
-				return
+	for nextIndex <= actualNextIndex {
+		rf.mu.Lock()
+
+		prevLogIndex, prevLogTerm := rf.getPrevLogInfo(nextIndex)
+
+		var command interface{}
+		var term int
+		if isFailed {
+			command, term = rf.getLogEntry(nextIndex)
+		}
+
+		curTerm := rf.currentTerm
+		curCommitIdx := rf.commitIndex
+
+		rf.mu.Unlock()
+
+		var entries []LogEntry
+
+		if isFailed {
+			entries = make([]LogEntry, 0)
+			entry := LogEntry{
+				Command: command,
+				Term:    term,
 			}
+			entries = append(entries, entry)
+		}
 
-			reply := AppendEntriesReply{}
+		args := AppendEntriesArgs{
+			TraceId:      rand.Uint32(),
+			Term:         curTerm,
+			LeaderId:     rf.me,
+			PrevLogIndex: prevLogIndex,
+			PrevLogTerm:  prevLogTerm,
+			Entries:      entries,
+			LeaderCommit: curCommitIdx,
+		}
 
-			log.Printf(", me[%d], state[%s], sendAppendEntries[%+v] to [%d]\n", rf.me, rf.state, args, idx)
-			if ok := rf.sendAppendEntries(idx, &args, &reply); !ok {
-				log.Printf(", me[%d], state[%s], sendAppendEntries[%+v] to [%d] error\n", rf.me, rf.state, args, idx)
-			} else {
-				log.Printf(", me[%d], state[%s], sendAppendEntries reply[%+v]\n", rf.me, rf.state, reply)
-				heartbeatReplyCh <- reply
-			}
-		}(i, v)
-	}
+		reply := AppendEntriesReply{}
 
-	wg.Wait()
-	close(heartbeatReplyCh)
+		log.Printf(", me[%d], state[%s], send heartbeat[%+v] to [%d]\n", rf.me, rf.state, args, server)
+		isSendOk := rf.sendAppendEntries(server, &args, &reply)
 
-	for reply := range heartbeatReplyCh {
+		rf.mu.Lock()
+
+		if !isSendOk {
+			log.Printf(", me[%d], state[%s], send heartbeat to [%d] error\n", rf.me, rf.state, server)
+
+			rf.mu.Unlock()
+			return
+		} else {
+			log.Printf(", me[%d], state[%s], send heartbeat reply[%+v] from [%d]\n", rf.me, rf.state, reply, server)
+		}
+
 		if rf.currentTerm != origTerm {
 			log.Printf(", me[%d], state[%s], term[%d] is changed since[%d] heartbeat, stop heartbeat\n", rf.me, rf.state, rf.currentTerm, origTerm)
 			rf.tryStopHeartbeat()
+
+			rf.mu.Unlock()
 			return
 		}
 
 		if ok := rf.doCheckRPC(reply.Term); !ok {
 			rf.tryStopHeartbeat()
+
+			rf.mu.Unlock()
 			return
 		}
+
+		if !reply.Success {
+			log.Printf(", me[%d], state[%s], heartbeat failed, decrease nextIndex\n", rf.me, rf.state)
+			isFailed = true
+
+			nextIndex -= 1
+
+			if nextIndex == NilLogIndex {
+				log.Panicf(", me[%d], state[%s], nextIndex reaches NilLogIndex", rf.me, rf.state)
+				// rf.mu.Unlock()
+				return
+			}
+
+			rf.mu.Unlock()
+			continue
+		}
+
+		// entry at nextIndex is checked or sent, move to next
+		if isFailed {
+			if rf.nextIndex[server] != nextIndex {
+				log.Printf(", me[%d], state[%s], nextIndex[%d] of [%d] is changed since[%d] heartbeat, stop\n", rf.me, rf.state, rf.nextIndex[server], server, nextIndex)
+
+				rf.mu.Unlock()
+				return
+			} else {
+				nextIndex++
+
+				log.Printf(", me[%d], state[%s], update nextIndex of server[%d] to [%d]", rf.me, rf.state, server, nextIndex)
+				rf.nextIndex[server] = nextIndex
+			}
+		} else {
+			nextIndex++
+		}
+
+		rf.mu.Unlock()
 	}
 }
 
 func (rf *Raft) heartbeat() {
-	// remember current status while holding the lock
+	rf.mu.Lock()
+
 	origTerm := rf.currentTerm
-	peersEntryInfo := make([]AppendEntriesArgs, 0)
+	lastLogIndex, _ := rf.getLastLogInfo()
+
+	rf.mu.Unlock()
 
 	for idx := range rf.peers {
 		if idx == rf.me {
-			peersEntryInfo = append(peersEntryInfo, AppendEntriesArgs{})
 			continue
 		}
 
-		prevLogIndex := NilLogIndex
-		numEntries := len(rf.entries)
-
-		if numEntries > 1 {
-			prevLogIndex = numEntries - 2
-		}
-
-		prevLogTerm := NullLogTerm
-		if numEntries > 1 {
-			prevLogTerm = rf.entries[prevLogIndex].Term
-		}
-
-		args := AppendEntriesArgs{
-			TraceId:      rand.Uint32(),
-			Term:         rf.currentTerm,
-			LeaderId:     rf.me,
-			PrevLogIndex: prevLogIndex,
-			PrevLogTerm:  prevLogTerm,
-			Entries:      nil,
-			LeaderCommit: rf.commitIndex,
-		}
-
-		peersEntryInfo = append(peersEntryInfo, args)
+		origNextIndex := rf.nextIndex[idx]
+		// use lastLogIndex+1 so that check will start from the real last log
+		go rf.doHeartbeat(origTerm, origNextIndex, lastLogIndex+1, idx)
 	}
-
-	go rf.doHeartbeat(origTerm, peersEntryInfo)
 }
 
 func (rf *Raft) doCheckRPC(term int) bool {
 	if term != NullLogTerm && term > rf.currentTerm {
 		log.Printf(", me[%d], state[%s], check rpc, term is old, update term\n", rf.me, rf.state)
 		rf.currentTerm = term
+
+		if rf.state == Leader {
+			log.Printf(", me[%d], state[%s], term is old, stop heartbeat\n", rf.me, rf.state)
+			rf.tryStopHeartbeat()
+		}
 
 		if rf.state != Follower {
 			log.Printf(", me[%d], state[%s], term is old, change to follower\n", rf.me, rf.state)
@@ -896,7 +947,7 @@ func (rf *Raft) backgroundApplyFunc() {
 	for {
 		select {
 		case <-rf.ctx.Done():
-			log.Printf(", me[%d], state[%s], backgroundApplyFunc stopped\n", rf.me, rf.state)
+			log.Printf(", me[%d], state[%s], background apply stopped\n", rf.me, rf.state)
 			return
 		case <-rf.backgroundTicker.C:
 			rf.mu.Lock()
@@ -911,7 +962,7 @@ func (rf *Raft) backgroundApplyFunc() {
 				}
 				rf.applyCh <- applyEntry
 
-				log.Printf(", me[%d], state[%s], apply entry[%+v]\n", rf.me, rf.state, applyEntry)
+				log.Printf(", me[%d], state[%s], background apply entry[%+v]\n", rf.me, rf.state, applyEntry)
 			}
 
 			rf.mu.Unlock()
@@ -938,10 +989,21 @@ func (rf *Raft) doAppendEntries(term int, prevLogIndex int, prevLogTerm int, ent
 
 	if prevLogTerm != rf.entries[prevLogIndex].Term {
 		log.Printf(", me[%d], state[%s], prevLog isn't match at [%d], remove all following\n", rf.me, rf.state, prevLogIndex)
-		rf.entries = rf.entries[:prevLogIndex]
+		reply.Success = false
+		return
 	}
 
-	rf.entries = append(rf.entries, entries...)
+	if len(entries) > 0 {
+		b := 0
+		for idx := range entries {
+			if prevLogIndex+idx+1 < len(rf.entries) && entries[idx].Term == rf.entries[prevLogIndex+idx+1].Term {
+				b = idx
+			}
+		}
+
+		rf.entries = rf.entries[:prevLogIndex+b+1]
+		rf.entries = append(rf.entries, entries[b:]...)
+	}
 
 	lastLogIndex, _ := rf.getLastLogInfo()
 	commitIndex := lastLogIndex
@@ -988,13 +1050,9 @@ func (rf *Raft) followerStateHandler(event Event) {
 		rf.currentTerm++
 		rf.votedFor = rf.me
 
-		// peersEntryInfo := rf.prepareElection()
-
 		rf.mu.Unlock()
 
 		go rf.election(origTerm)
-
-		// go rf.doElection(origTerm, peersEntryInfo)
 
 	case RequestVoteRPC:
 		rpcEvent := event.eventContent.(RPCEvent)
@@ -1043,13 +1101,9 @@ func (rf *Raft) candidateStateHandler(event Event) {
 		rf.currentTerm++
 		rf.votedFor = rf.me
 
-		// peersEntryInfo := rf.prepareElection()
-
 		rf.mu.Unlock()
 
 		go rf.election(origTerm)
-
-		// go rf.doElection(origTerm, peersEntryInfo)
 
 	case RequestVoteRPC:
 		rpcEvent := event.eventContent.(RPCEvent)
@@ -1087,10 +1141,8 @@ func (rf *Raft) candidateStateHandler(event Event) {
 func (rf *Raft) leaderStateHandler(event Event) {
 	switch event.eventType {
 	case HeartbeatTick:
-		rf.mu.Lock()
 		log.Printf(", me[%d], state[%s], heartbeat\n", rf.me, rf.state)
 		rf.heartbeat()
-		rf.mu.Unlock()
 	default:
 		log.Printf(", me[%d], state[%s], ignore event[%+v]\n", rf.me, rf.state, event)
 	}
