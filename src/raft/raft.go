@@ -407,6 +407,7 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 			select {
 			case <-ctx.Done():
 				log.Printf(", me[%d], state[%s], stop retry, will retry in heartbeat\n", rf.me, rf.state)
+
 				rf.mu.Unlock()
 				return
 			default:
@@ -432,7 +433,7 @@ func (rf *Raft) doSendAppendEntries(ctx context.Context, origTerm int, origNextI
 		if !reply.Success {
 			log.Printf(", me[%d], state[%s], send append entries failed, decrease nextIndex\n", rf.me, rf.state)
 
-			nextIndex -= 1
+			nextIndex--
 
 			if nextIndex == NilLogIndex {
 				log.Panicf(", me[%d], state[%s], nextIndex reaches NilLogIndex", rf.me, rf.state)
@@ -505,7 +506,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	term = rf.currentTerm
 
 	if rf.state != Leader {
-		log.Printf(", me[%d], state[%s], Start failed, server is not leader\n", rf.me, rf.state)
+		log.Printf(", me[%d], state[%s], Start[%v] failed, server is not leader\n", rf.me, rf.state, command)
 		index = NilLogIndex
 		isLeader = false
 
@@ -534,6 +535,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	cl := sync.Mutex{}
 	cond := sync.NewCond(&cl)
 	ctx, cancel := context.WithCancel(context.Background())
+	ticker := time.Tick(rf.rpcTimeout)
 
 	for idx := range rf.peers {
 		if idx == rf.me {
@@ -561,23 +563,19 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	if rf.currentTerm != origTerm {
-		log.Printf(", me[%d], state[%s], term[%d] is changed since[%d] last acquire, stop\n", rf.me, rf.state, rf.currentTerm, origTerm)
-		return index, term, isLeader
-	}
-
-	// apply entry
-	applyEntry := ApplyMsg{
-		CommandValid: true,
-		Command:      command,
-		CommandIndex: lastLogIndex,
-	}
-	rf.applyCh <- applyEntry
-
-	rf.lastApplied = lastLogIndex
+	// // apply entry
+	// applyEntry := ApplyMsg{
+	// 	CommandValid: true,
+	// 	Command:      command,
+	// 	CommandIndex: lastLogIndex,
+	// }
+	// rf.applyCh <- applyEntry
+	//
+	// rf.lastApplied = lastLogIndex
 	index = lastLogIndex
 
-	log.Printf(", me[%d], state[%s], apply entry[%+v]\n", rf.me, rf.state, applyEntry)
+	// log.Printf(", me[%d], state[%s], apply entry[%+v]\n", rf.me, rf.state, applyEntry)
+	log.Printf(", me[%d], state[%s], index[%d] term[%d] isLeader[%t]\n", rf.me, rf.state, index, term, isLeader)
 
 	return index, term, isLeader
 }
@@ -772,18 +770,24 @@ func (rf *Raft) heartbeatTickerFunc(ctx context.Context) {
 	}
 }
 
-func (rf *Raft) doHeartbeat(origTerm int, origNextIndex int, actualNextIndex int, server int) {
-	nextIndex := origNextIndex
+func (rf *Raft) doHeartbeat(origTerm int, nextIndex int, actualNextIndex int, server int) {
+	// origNextIndex := nextIndex
 	isFailed := false
 
 	for nextIndex <= actualNextIndex {
 		rf.mu.Lock()
 
+		curNextIndex := rf.nextIndex[server]
 		prevLogIndex, prevLogTerm := rf.getPrevLogInfo(nextIndex)
 
 		var command interface{}
 		var term int
 		if isFailed {
+			if nextIndex == actualNextIndex {
+				rf.mu.Unlock()
+				return
+			}
+
 			command, term = rf.getLogEntry(nextIndex)
 		}
 
@@ -848,7 +852,7 @@ func (rf *Raft) doHeartbeat(origTerm int, origNextIndex int, actualNextIndex int
 			log.Printf(", me[%d], state[%s], heartbeat failed, decrease nextIndex\n", rf.me, rf.state)
 			isFailed = true
 
-			nextIndex -= 1
+			nextIndex--
 
 			if nextIndex == NilLogIndex {
 				log.Panicf(", me[%d], state[%s], nextIndex reaches NilLogIndex", rf.me, rf.state)
@@ -860,22 +864,20 @@ func (rf *Raft) doHeartbeat(origTerm int, origNextIndex int, actualNextIndex int
 			continue
 		}
 
-		// entry at nextIndex is checked or sent, move to next
-		if isFailed {
-			if rf.nextIndex[server] != nextIndex {
-				log.Printf(", me[%d], state[%s], nextIndex[%d] of [%d] is changed since[%d] heartbeat, stop\n", rf.me, rf.state, rf.nextIndex[server], server, nextIndex)
+		if rf.nextIndex[server] != curNextIndex {
+			log.Printf(", me[%d], state[%s], nextIndex[%d] of [%d] is changed since[%d] heartbeat, stop\n", rf.me, rf.state, rf.nextIndex[server], server, curNextIndex)
 
-				rf.mu.Unlock()
-				return
-			} else {
-				nextIndex++
-
-				log.Printf(", me[%d], state[%s], update nextIndex of server[%d] to [%d]", rf.me, rf.state, server, nextIndex)
-				rf.nextIndex[server] = nextIndex
-			}
-		} else {
-			nextIndex++
+			rf.mu.Unlock()
+			return
 		}
+
+		if isFailed || prevLogIndex != NilLogIndex {
+			log.Printf(", me[%d], state[%s], update nextIndex of server[%d] to [%d]", rf.me, rf.state, server, nextIndex)
+			rf.nextIndex[server] = nextIndex
+		}
+
+		// entry before nextIndex is checked or sent, move to next
+		nextIndex++
 
 		rf.mu.Unlock()
 	}
@@ -896,7 +898,8 @@ func (rf *Raft) heartbeat() {
 
 		origNextIndex := rf.nextIndex[idx]
 		// use lastLogIndex+1 so that check will start from the real last log
-		go rf.doHeartbeat(origTerm, origNextIndex, lastLogIndex+1, idx)
+		// go
+		rf.doHeartbeat(origTerm, origNextIndex, lastLogIndex+1, idx)
 	}
 }
 
