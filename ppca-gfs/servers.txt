@@ -1,6 +1,0 @@
-master
-cs1
-cs2
-cs3
-cs4
-cs5
