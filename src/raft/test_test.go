@@ -56,30 +56,42 @@ func TestReElection2A(t *testing.T) {
 
 	cfg.begin("Test (2A): election after network failure")
 
+	fmt.Println("-----leader1 := cfg.checkOneLeader()")
 	leader1 := cfg.checkOneLeader()
 
 	// if the leader disconnects, a new one should be elected.
+	fmt.Printf("-----cfg.disconnect(%d)\n", leader1)
 	cfg.disconnect(leader1)
+	fmt.Println("-----cfg.checkOneLeader()")
 	cfg.checkOneLeader()
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader.
+	fmt.Printf("-----cfg.connect(%d)\n", leader1)
 	cfg.connect(leader1)
+	fmt.Println("-----leader2 := cfg.checkOneLeader()")
 	leader2 := cfg.checkOneLeader()
 
 	// if there's no quorum, no leader should
 	// be elected.
+	fmt.Printf("-----cfg.disconnect(%d)\n", leader2)
 	cfg.disconnect(leader2)
+	fmt.Printf("-----cfg.disconnect(%d)\n", (leader2 + 1) % servers)
 	cfg.disconnect((leader2 + 1) % servers)
 	time.Sleep(2 * RaftElectionTimeout)
+	fmt.Println("-----cfg.checkNoLeader()")
 	cfg.checkNoLeader()
 
 	// if a quorum arises, it should elect a leader.
+	fmt.Printf("-----cfg.connect(%d)\n", (leader2 + 1) % servers)
 	cfg.connect((leader2 + 1) % servers)
+	fmt.Println("-----cfg.checkOneLeader()")
 	cfg.checkOneLeader()
 
 	// re-join of last node shouldn't prevent leader from existing.
+	fmt.Printf("-----cfg.connect(%d)\n", leader2)
 	cfg.connect(leader2)
+	fmt.Println("-----cfg.checkOneLeader()")
 	cfg.checkOneLeader()
 
 	cfg.end()
@@ -93,7 +105,8 @@ func TestBasicAgree2B(t *testing.T) {
 	cfg.begin("Test (2B): basic agreement")
 
 	iters := 3
-	for index := 1; index < iters+1; index++ {
+	// because of sending a noop, index starts from 2 here.
+	for index := 2; index < iters+1; index++ {
 		nd, _ := cfg.nCommitted(index)
 		if nd > 0 {
 			t.Fatalf("some have committed before Start()")
@@ -116,6 +129,7 @@ func TestFailAgree2B(t *testing.T) {
 	cfg.begin("Test (2B): agreement despite follower disconnection")
 
 	cfg.one(101, servers, false)
+	cfg.end()
 
 	// follower network disconnection
 	leader := cfg.checkOneLeader()

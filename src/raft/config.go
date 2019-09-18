@@ -179,16 +179,16 @@ func (cfg *config) start1(i int) {
 							m.CommandIndex, i, m.Command, j, old)
 					}
 				}
-				_, prevok := cfg.logs[i][m.CommandIndex-1]
+				// _, prevok := cfg.logs[i][m.CommandIndex-1]
 				cfg.logs[i][m.CommandIndex] = v
 				if m.CommandIndex > cfg.maxIndex {
 					cfg.maxIndex = m.CommandIndex
 				}
 				cfg.mu.Unlock()
 
-				if m.CommandIndex > 1 && prevok == false {
-					err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
-				}
+				// if m.CommandIndex > 1 && prevok == false {
+				// 	err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
+				// }
 			} else {
 				err_msg = fmt.Sprintf("committed command %v is not an int", m.Command)
 			}
