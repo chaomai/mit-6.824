@@ -1,24 +1,38 @@
 package raft
 
 import (
+	"context"
+
 	"go.uber.org/zap"
 )
 
 // call by main goroutine
-func (rf *Raft) runCandidate() {
+func (rf *Raft) cleanupCandidate() {
+	zap.L().Debug("cleanup candidate",
+		zap.Stringer("server", rf.me),
+		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("state", rf.getState()))
+}
+
+// call by main goroutine
+func (rf *Raft) runCandidate(ctx context.Context) {
+	defer rf.goroutineWg.Done()
+
 	zap.L().Info("run candidate",
 		zap.Stringer("server", rf.me),
 		zap.Stringer("term", rf.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 
-	voteCh := rf.vote()
+	defer rf.cleanupCandidate()
+
+	voteCh := rf.vote(ctx)
 	numVotedGranted := 0
 
 	for rf.getState() == Candidate {
 		select {
 		case rpc := <-rf.rpcCh:
 			rf.handleRPC(rpc)
-		case <-rf.shutdownCh:
+		case <-ctx.Done():
 			zap.L().Info("candidate shutdown",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),

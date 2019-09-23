@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"context"
 	"log"
 	"math/rand"
 	"time"
@@ -30,10 +31,39 @@ func getRandomDuration(min time.Duration) time.Duration {
 }
 
 // non-blocking notify
-func notify(ch chan struct{}) {
+func notify(ch chan Notification, traceId ...uint32) {
+	var id uint32
+	if len(traceId) == 0 {
+		id = rand.Uint32()
+	} else if len(traceId) == 1 {
+		id = traceId[0]
+	} else {
+		zap.L().Panic("notify accept at most one trace id")
+	}
+
 	select {
-	case ch <- struct{}{}:
+	case ch <- Notification{TraceId: id}:
 	default:
+	}
+}
+
+// cancel send elem to channel if cancel function of ctx is called.
+func trySend(ctx context.Context, ch interface{}, elem interface{}) {
+	switch t := ch.(type) {
+	case chan appendResult:
+		select {
+		case <-ctx.Done():
+			return
+		case t <- elem.(appendResult):
+		}
+	case chan voteResult:
+		select {
+		case <-ctx.Done():
+			return
+		case t <- elem.(voteResult):
+		}
+	default:
+		zap.L().Panic("unknown chan type", zap.Any("type", t))
 	}
 }
 

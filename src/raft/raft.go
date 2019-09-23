@@ -18,6 +18,10 @@ package raft
 //
 
 import (
+	"context"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strconv"
 	"sync"
@@ -128,6 +132,11 @@ func (s ServerState) String() string {
 	}
 }
 
+// Notification
+type Notification struct {
+	TraceId uint32
+}
+
 //
 // A Go object implementing a single Raft peer.
 //
@@ -157,22 +166,22 @@ type Raft struct {
 	nextIndex  []Index
 	matchIndex []Index
 
-	backgroundDuration time.Duration
-	heartbeatDuration  time.Duration
-	electionDuration   time.Duration
-	rpcTimeout         time.Duration
-	state              ServerState
+	applyDuration     time.Duration
+	heartbeatDuration time.Duration
+	electionDuration  time.Duration
+	electionTimer     *time.Timer
+	rpcTimeout        time.Duration
+	lastContact       time.Time
+	state             ServerState
 
 	rpcCh             chan *RPCFuture
 	applyCh           chan ApplyMsg // applyCh is a channel on which the tester or service expects Raft to send ApplyMsg messages
 	appendResultCh    chan appendResult
-	backgroundApplyCh chan struct{}
-	shutdownCh        chan struct{}
-	replicateNotifyCh map[ServerId]chan struct{}
-	heartBeatNotifyCh map[ServerId]chan struct{}
+	backgroundApplyCh chan Notification
+	raftCtxCancel     context.CancelFunc
+	replicateNotifyCh map[ServerId]chan Notification
+	heartBeatNotifyCh map[ServerId]chan Notification
 	goroutineWg       sync.WaitGroup
-
-	electionTimer *time.Timer
 }
 
 // return currentTerm and whether this server
@@ -276,8 +285,20 @@ func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) 
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
-	close(rf.shutdownCh)
+	rf.raftCtxCancel()
 	rf.goroutineWg.Wait()
+}
+
+func (rf *Raft) getLastContact() time.Time {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.lastContact
+}
+
+func (rf *Raft) updateLastContact() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.lastContact = time.Now()
 }
 
 func (rf *Raft) getLogInfoAt(i Index) (Index, Term) {
@@ -306,8 +327,7 @@ func (rf *Raft) getEntries(i ...Index) []*Entry {
 		b = i[0]
 		e = i[1]
 	} else {
-		zap.L().Panic("only one or two indexes is accepted",
-			zap.Any("i", i))
+		zap.L().Panic("only one or two indexes is accepted", zap.Any("i", i))
 	}
 	return rf.log[b:e]
 }
@@ -340,13 +360,13 @@ func (rf *Raft) getPrevLogInfo(index Index) (Index, Term) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	numLog := len(rf.log)
+	if index == 0 {
+		zap.L().Panic("the previous log of index 0 doesn't exist")
+	}
 
+	numLog := len(rf.log)
 	if index > Index(numLog) {
 		zap.L().Panic("entry doesn't exist",
-			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
-			zap.Stringer("state", rf.getState()),
 			zap.Stringer("index", index),
 			zap.Int("num of log", numLog))
 	}
@@ -432,6 +452,40 @@ func (rf *Raft) getState() ServerState {
 	return rf.state
 }
 
+// get the upper bound of term.
+func (rf *Raft) getFirstEntryOfTerm(t Term) (Index, Term) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	zap.L().Debug("logs",
+		zap.Stringer("server", rf.me),
+		zap.Stringer("term", rf.currentTerm),
+		zap.Stringer("state", rf.state),
+		zap.Any("logs", rf.log))
+
+	// find upper bound
+	first0 := -1
+	last0 := len(rf.log) - 1
+
+	first := first0
+	last := last0
+
+	for first < last {
+		mid := last - (last-first)/2
+		if rf.log[mid].Term > t {
+			last = mid - 1
+		} else {
+			first = mid
+		}
+	}
+
+	if first == first0 {
+		return NilIndex, NilTerm
+	}
+
+	return rf.log[first].Index, rf.log[first].Term
+}
+
 // call by main goroutine
 func (rf *Raft) resetElectionTimer() {
 	d := getRandomDuration(rf.electionDuration)
@@ -468,17 +522,26 @@ func (rf *Raft) handleRPC(rpc *RPCFuture) {
 }
 
 // call by main goroutine
-func (rf *Raft) runBackgroundApply() {
+func (rf *Raft) runApply(ctx context.Context) {
 	defer rf.goroutineWg.Done()
 
-	backgroundTicker := time.NewTicker(rf.backgroundDuration)
+	backgroundTicker := time.NewTicker(rf.applyDuration)
 
 	for {
 		select {
-		case <-rf.shutdownCh:
+		case <-ctx.Done():
+			zap.L().Info("background apply stop",
+				zap.Stringer("server", rf.me),
+				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("state", rf.getState()))
 			return
 		case <-backgroundTicker.C:
 		case <-rf.backgroundApplyCh:
+			zap.L().Debug("get background apply notify",
+				zap.Stringer("server", rf.me),
+				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("state", rf.getState()))
+
 			for rf.getCommitIndex() > rf.lastApplied {
 				rf.lastApplied++
 
@@ -503,23 +566,30 @@ func (rf *Raft) runBackgroundApply() {
 }
 
 // call by main goroutine
-func (rf *Raft) run() {
+func (rf *Raft) run(ctx context.Context) {
 	defer rf.goroutineWg.Done()
 
 	for {
 		select {
-		case <-rf.shutdownCh:
+		case <-ctx.Done():
+			zap.L().Info("shutdown",
+				zap.Stringer("server", rf.me),
+				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("state", rf.getState()))
 			return
 		default:
 		}
 
 		switch rf.getState() {
 		case Candidate:
-			rf.runCandidate()
+			rf.goroutineWg.Add(1)
+			rf.runCandidate(ctx)
 		case Follower:
-			rf.runFollower()
+			rf.goroutineWg.Add(1)
+			rf.runFollower(ctx)
 		case Leader:
-			rf.runLeader()
+			rf.goroutineWg.Add(1)
+			rf.runLeader(ctx)
 		}
 	}
 }
@@ -553,31 +623,33 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	electionDuration := time.Millisecond * 300
 
 	rf := &Raft{
-		peers:              peers,
-		persister:          persister,
-		me:                 ServerId(me),
-		currentTerm:        0,
-		votedFor:           NilServerId,
-		votedForTerm:       0,
-		log:                make([]*Entry, 0),
-		commitIndex:        0,
-		lastApplied:        0,
-		nextIndex:          nil,
-		matchIndex:         nil,
-		backgroundDuration: time.Millisecond * 5,
-		heartbeatDuration:  time.Millisecond * 100,
-		electionDuration:   electionDuration,
-		rpcTimeout:         time.Millisecond * 50,
-		state:              Follower,
-		rpcCh:              make(chan *RPCFuture, 1),
-		applyCh:            applyCh,
-		appendResultCh:     make(chan appendResult, 1),
-		backgroundApplyCh:  make(chan struct{}),
-		shutdownCh:         make(chan struct{}),
-		replicateNotifyCh:  nil,
-		heartBeatNotifyCh:  nil,
-		electionTimer:      time.NewTimer(getRandomDuration(electionDuration)),
+		peers:             peers,
+		persister:         persister,
+		me:                ServerId(me),
+		currentTerm:       0,
+		votedFor:          NilServerId,
+		votedForTerm:      0,
+		log:               make([]*Entry, 0),
+		commitIndex:       0,
+		lastApplied:       0,
+		nextIndex:         nil,
+		matchIndex:        nil,
+		applyDuration:     time.Millisecond * 5,
+		heartbeatDuration: time.Millisecond * 50,
+		electionDuration:  electionDuration,
+		rpcTimeout:        time.Millisecond * 10,
+		state:             Follower,
+		rpcCh:             make(chan *RPCFuture, 1),
+		applyCh:           applyCh,
+		appendResultCh:    nil,
+		backgroundApplyCh: make(chan Notification),
+		replicateNotifyCh: nil,
+		heartBeatNotifyCh: nil,
+		electionTimer:     time.NewTimer(getRandomDuration(electionDuration)),
 	}
+
+	var ctx context.Context
+	ctx, rf.raftCtxCancel = context.WithCancel(context.Background())
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
@@ -587,8 +659,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	}
 
 	rf.goroutineWg.Add(2)
-	go rf.run()
-	go rf.runBackgroundApply()
+	go rf.run(ctx)
+	go rf.runApply(ctx)
+
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	return rf
 }

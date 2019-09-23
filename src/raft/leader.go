@@ -1,12 +1,18 @@
 package raft
 
 import (
+	"context"
 	"math/rand"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 )
+
+type ackInfo struct {
+	traceId uint32
+	ts      time.Time
+}
 
 // call by main goroutine
 func (rf *Raft) setupLeader() {
@@ -18,8 +24,9 @@ func (rf *Raft) setupLeader() {
 	numServers := len(rf.peers)
 	rf.nextIndex = make([]Index, numServers)
 	rf.matchIndex = make([]Index, numServers)
-	rf.replicateNotifyCh = make(map[ServerId]chan struct{})
-	rf.heartBeatNotifyCh = make(map[ServerId]chan struct{})
+	rf.appendResultCh = make(chan appendResult, 1)
+	rf.replicateNotifyCh = make(map[ServerId]chan Notification)
+	rf.heartBeatNotifyCh = make(map[ServerId]chan Notification)
 
 	for i := 0; i < numServers; i++ {
 		serverId := ServerId(i)
@@ -27,34 +34,36 @@ func (rf *Raft) setupLeader() {
 		lastLogIndex, _ := rf.getLastLogInfo()
 		rf.nextIndex[i] = lastLogIndex + 1
 		rf.matchIndex[i] = 0
-		rf.replicateNotifyCh[serverId] = make(chan struct{}, 1)
-		rf.heartBeatNotifyCh[serverId] = make(chan struct{}, 1)
+		rf.replicateNotifyCh[serverId] = make(chan Notification, 1)
+		rf.heartBeatNotifyCh[serverId] = make(chan Notification, 1)
 	}
 }
 
-// call by main goroutine.
+// call by main goroutine
 func (rf *Raft) cleanupLeader() {
-	zap.L().Debug("cleanup leader",
-		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
-		zap.Stringer("state", rf.getState()))
+	close(rf.appendResultCh)
 
 	rf.nextIndex = nil
 	rf.matchIndex = nil
+	rf.appendResultCh = nil
 	rf.replicateNotifyCh = nil
 	rf.heartBeatNotifyCh = nil
 }
 
-// call by main goroutine.
+// call by main goroutine
 // each server has a dedicated heartbeat goroutine.
-func (rf *Raft) heartbeat(stepDownCh chan struct{}, stepDownWg *sync.WaitGroup, s ServerId) {
+func (rf *Raft) heartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, s ServerId) {
 	defer stepDownWg.Done()
-
 	heartbeatTicker := time.NewTicker(rf.heartbeatDuration)
 
 	for {
 		select {
-		case <-stepDownCh:
+		case <-ctx.Done():
+			zap.L().Info("heartbeat stop",
+				zap.Stringer("server", rf.me),
+				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("state", rf.getState()),
+				zap.Stringer("remote server", s))
 			return
 		case <-heartbeatTicker.C:
 			zap.L().Info("heartbeat",
@@ -62,24 +71,19 @@ func (rf *Raft) heartbeat(stepDownCh chan struct{}, stepDownWg *sync.WaitGroup, 
 				zap.Stringer("term", rf.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Stringer("remote server", s))
-			notify(rf.heartBeatNotifyCh[s])
+			notify(rf.heartBeatNotifyCh[s], rand.Uint32())
 		}
 	}
 }
 
 // call by main goroutine
-func (rf *Raft) runHeartbeat(stepDownCh chan struct{}, stepDownWg *sync.WaitGroup, curTerm Term) {
+func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, curTerm Term) {
 	defer stepDownWg.Done()
 
 	for i := range rf.peers {
 		serverId := ServerId(i)
-
-		if serverId == rf.me {
-			continue
-		}
-
 		stepDownWg.Add(1)
-		go rf.heartbeat(stepDownCh, stepDownWg, serverId)
+		go rf.heartbeat(ctx, stepDownWg, serverId)
 	}
 }
 
@@ -109,55 +113,62 @@ func (rf *Raft) dispatchEntries(entries ...*Entry) {
 
 	for i := range rf.peers {
 		serverId := ServerId(i)
-		notify(rf.replicateNotifyCh[serverId])
+		notify(rf.replicateNotifyCh[serverId], rand.Uint32())
 	}
 }
 
 // call by main goroutine
 // each server has a dedicated replicate goroutine.
-func (rf *Raft) replicate(stepDownCh chan struct{}, stepDownWg *sync.WaitGroup, s ServerId,
-	replicateNotifyCh chan struct{}, heartBeatNotifyCh chan struct{}, curTerm Term) {
+func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s ServerId, curTerm Term) {
 	defer stepDownWg.Done()
+	replicateNotifyCh := rf.replicateNotifyCh[s]
+	heartbeatNotifyCh := rf.heartBeatNotifyCh[s]
 
 	for {
-		entries := make([]*Entry, 0)
-		nextLogIndex := rf.getNextIndex(s)
-		prevLogIndex, prevLogTerm := rf.getPrevLogInfo(nextLogIndex)
-		var lastAppendLogIndex Index
+		var traceId uint32
 
 		select {
-		case <-stepDownCh:
+		case <-ctx.Done():
+			zap.L().Info("replicate stop",
+				zap.Stringer("server", rf.me),
+				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("state", rf.getState()),
+				zap.Stringer("remote server", s))
 			return
-		case <-heartBeatNotifyCh:
+		case n := <-heartbeatNotifyCh:
 			zap.L().Debug("get heartbeat notify",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
+				zap.Uint32("traceId", traceId),
 				zap.Stringer("remote server", s))
-
-			lastLogIndex, _ := rf.getLastLogInfo()
-			if rf.getMatchIndex(s) < lastLogIndex {
-				es := rf.getEntries(nextLogIndex, lastLogIndex+1)
-				entries = append(entries, es...)
-				lastAppendLogIndex = nextLogIndex
-			} else {
-				lastAppendLogIndex = NilIndex
-			}
-
-		case <-replicateNotifyCh:
+			traceId = n.TraceId
+		case n := <-replicateNotifyCh:
 			zap.L().Debug("get replicate notify",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
+				zap.Uint32("traceId", traceId),
 				zap.Stringer("remote server", s))
+			traceId = n.TraceId
+		}
 
-			es := rf.getEntries(nextLogIndex)
+		entries := make([]*Entry, 0)
+		lastLogIndex, _ := rf.getLastLogInfo()
+		nextLogIndex := rf.getNextIndex(s)
+		prevLogIndex, prevLogTerm := rf.getPrevLogInfo(nextLogIndex)
+		var lastAppendLogIndex Index
+
+		if nextLogIndex <= lastLogIndex {
+			es := rf.getEntries(nextLogIndex, lastLogIndex+1)
 			entries = append(entries, es...)
-			lastAppendLogIndex = nextLogIndex
+			lastAppendLogIndex = lastLogIndex
+		} else {
+			lastAppendLogIndex = NilIndex
 		}
 
 		args := AppendEntriesArgs{
-			TraceId:      rand.Uint32(),
+			TraceId:      traceId,
 			Term:         curTerm,
 			LeaderId:     rf.me,
 			PrevLogIndex: prevLogIndex,
@@ -174,12 +185,13 @@ func (rf *Raft) replicate(stepDownCh chan struct{}, stepDownWg *sync.WaitGroup, 
 			}
 
 			ret := appendResult{
-				AppendEntriesReply: reply,
-				LastAppendLogIndex: lastAppendLogIndex,
-				ServerId:           rf.me,
+				AppendEntriesReply:     reply,
+				LastAppendLogIndex:     lastAppendLogIndex,
+				ConflictTermFirstIndex: NilIndex,
+				ServerId:               rf.me,
 			}
 
-			rf.appendResultCh <- ret
+			trySend(ctx, rf.appendResultCh, ret)
 		} else {
 			zap.L().Debug("send AppendEntries",
 				zap.Stringer("server", rf.me),
@@ -191,12 +203,13 @@ func (rf *Raft) replicate(stepDownCh chan struct{}, stepDownWg *sync.WaitGroup, 
 			reply := AppendEntriesReply{}
 			if ok := rf.sendAppendEntries(s, &args, &reply); ok {
 				ret := appendResult{
-					AppendEntriesReply: reply,
-					LastAppendLogIndex: lastAppendLogIndex,
-					ServerId:           s,
+					AppendEntriesReply:     reply,
+					LastAppendLogIndex:     lastAppendLogIndex,
+					ConflictTermFirstIndex: reply.ConflictTermFirstIndex,
+					ServerId:               s,
 				}
 
-				rf.appendResultCh <- ret
+				trySend(ctx, rf.appendResultCh, ret)
 			} else {
 				zap.L().Warn("send AppendEntries failed",
 					zap.Stringer("server", rf.me),
@@ -210,18 +223,20 @@ func (rf *Raft) replicate(stepDownCh chan struct{}, stepDownWg *sync.WaitGroup, 
 }
 
 // call by main goroutine
-func (rf *Raft) runBackgroundReplicate(stepDownCh chan struct{}, stepDownWg *sync.WaitGroup, curTerm Term) {
+func (rf *Raft) runReplicate(ctx context.Context, stepDownWg *sync.WaitGroup, curTerm Term) {
 	defer stepDownWg.Done()
 
 	for i := range rf.peers {
 		serverId := ServerId(i)
 		stepDownWg.Add(1)
-		go rf.replicate(stepDownCh, stepDownWg, serverId, rf.replicateNotifyCh[serverId], rf.heartBeatNotifyCh[serverId], curTerm)
+		go rf.replicate(ctx, stepDownWg, serverId, curTerm)
 	}
 }
 
 // call by main goroutine
-func (rf *Raft) runLeader() {
+func (rf *Raft) runLeader(ctx context.Context) {
+	defer rf.goroutineWg.Done()
+
 	zap.L().Info("run leader",
 		zap.Stringer("server", rf.me),
 		zap.Stringer("term", rf.getCurrentTerm()),
@@ -238,27 +253,30 @@ func (rf *Raft) runLeader() {
 	noopEntry := makeNoopEntry(lastLogIndex+1, rf.getCurrentTerm())
 	rf.dispatchEntries(noopEntry)
 
-	stepDownCh := make(chan struct{})
+	leaderCtx, cancel := context.WithCancel(ctx)
 	stepDownWg := sync.WaitGroup{}
 
 	defer func() {
-		// cleanup
-		close(stepDownCh)
+		cancel()
 		// wait for goroutines
 		stepDownWg.Wait()
 		rf.cleanupLeader()
+
+		zap.L().Debug("cleanup leader",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()))
 	}()
 
-	currentTerm := rf.getCurrentTerm()
 	stepDownWg.Add(2)
-	rf.runHeartbeat(stepDownCh, &stepDownWg, currentTerm)
-	rf.runBackgroundReplicate(stepDownCh, &stepDownWg, currentTerm)
+	rf.runHeartbeat(leaderCtx, &stepDownWg, rf.getCurrentTerm())
+	rf.runReplicate(leaderCtx, &stepDownWg, rf.getCurrentTerm())
 
 	for rf.getState() == Leader {
 		select {
 		case rpc := <-rf.rpcCh:
 			rf.handleRPC(rpc)
-		case <-rf.shutdownCh:
+		case <-ctx.Done():
 			zap.L().Info("leader shutdown",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
@@ -280,7 +298,6 @@ func (rf *Raft) runLeader() {
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", a.ServerId),
 					zap.Stringer("remote server term", a.Term))
-				notify(stepDownCh)
 				return
 			}
 
@@ -310,7 +327,13 @@ func (rf *Raft) runLeader() {
 						zap.Stringer("commit index", rf.getCommitIndex()))
 				}
 			} else {
-				rf.setNextIndex(a.ServerId, rf.getNextIndex(a.ServerId)-1)
+				if a.ConflictTermFirstIndex <= 0 {
+					// send snapshot or send the first entry after index 0.
+					rf.setNextIndex(a.ServerId, 1)
+				} else {
+					rf.setNextIndex(a.ServerId, a.ConflictTermFirstIndex)
+				}
+
 				zap.L().Debug("decrease next index",
 					zap.Stringer("server", rf.me),
 					zap.Stringer("term", rf.getCurrentTerm()),
@@ -318,7 +341,6 @@ func (rf *Raft) runLeader() {
 					zap.Stringer("remote server", a.ServerId),
 					zap.Stringer("next index", rf.getNextIndex(a.ServerId)))
 			}
-		case <-rf.electionTimer.C:
 		}
 	}
 }

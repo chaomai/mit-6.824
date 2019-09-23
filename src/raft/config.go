@@ -179,6 +179,8 @@ func (cfg *config) start1(i int) {
 							m.CommandIndex, i, m.Command, j, old)
 					}
 				}
+
+				// because of sending a noop, index check may failed here. so ignore it.
 				// _, prevok := cfg.logs[i][m.CommandIndex-1]
 				cfg.logs[i][m.CommandIndex] = v
 				if m.CommandIndex > cfg.maxIndex {

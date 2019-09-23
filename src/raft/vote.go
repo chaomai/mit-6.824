@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"math/rand"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -63,6 +64,20 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 
 	defer func() { rpc.Respond(reply, nil) }()
 
+	if rf.getState() == Leader {
+		// so that removed server won't able to disrupt cluster.
+	} else {
+		if time.Now().Sub(rf.getLastContact()) < rf.electionDuration {
+			// so that removed server won't able to disrupt cluster.
+			zap.L().Debug("just contact with leader and reject",
+				zap.Stringer("server", rf.me),
+				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("state", rf.getState()),
+				zap.Uint32("traceId", args.TraceId))
+			return
+		}
+	}
+
 	if args.Term < rf.getCurrentTerm() {
 		zap.L().Debug("get older term from vote request and reject",
 			zap.Stringer("server", rf.me),
@@ -95,6 +110,7 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 				zap.Stringer("state", rf.getState()),
 				zap.Uint32("traceId", args.TraceId))
 			reply.VoteGranted = true
+			return
 		}
 
 		zap.L().Debug("already voted other candidate in same term and reject",
@@ -197,7 +213,7 @@ func (rf *Raft) sendRequestVote(server ServerId, args *RequestVoteArgs, reply *R
 }
 
 // call by main goroutine
-func (rf *Raft) vote() chan voteResult {
+func (rf *Raft) vote(ctx context.Context) chan voteResult {
 	rf.setCurrentTerm(rf.getCurrentTerm() + 1) // Increment current Term
 	rf.votedFor = rf.me                        // vote for self
 	rf.votedForTerm = rf.getCurrentTerm()
@@ -236,7 +252,7 @@ func (rf *Raft) vote() chan voteResult {
 				ServerId:         rf.me,
 			}
 
-			voteCh <- ret
+			trySend(ctx, voteCh, ret)
 		} else {
 			go func(s ServerId) {
 				zap.L().Debug("send RequestVote",
@@ -253,7 +269,7 @@ func (rf *Raft) vote() chan voteResult {
 						ServerId:         s,
 					}
 
-					voteCh <- ret
+					trySend(ctx, voteCh, ret)
 				} else {
 					zap.L().Warn("send RequestVote failed",
 						zap.Stringer("server", rf.me),

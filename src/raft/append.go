@@ -17,15 +17,17 @@ type AppendEntriesArgs struct {
 }
 
 type AppendEntriesReply struct {
-	TraceId uint32
-	Term    Term
-	Success bool
+	TraceId                uint32
+	Term                   Term
+	Success                bool
+	ConflictTermFirstIndex Index
 }
 
 type appendResult struct {
 	AppendEntriesReply
-	LastAppendLogIndex Index
-	ServerId           ServerId
+	LastAppendLogIndex     Index
+	ConflictTermFirstIndex Index
+	ServerId               ServerId
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -72,22 +74,24 @@ func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 			zap.Uint32("traceId", args.TraceId))
 	}
 
+	// check prev
 	if args.PrevLogIndex > 0 {
 		index, term := rf.getLogInfoAt(args.PrevLogIndex)
 
 		if index <= 0 || term != args.PrevLogTerm {
-			zap.L().Debug("no such a prev log or prev log term is different and ignore",
+			firstIndex, _ := rf.getFirstEntryOfTerm(args.PrevLogTerm)
+			reply.ConflictTermFirstIndex = firstIndex
+
+			zap.L().Debug("no such a prev log index or prev log term is different and ignore",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
-				zap.Stringer("index", index),
-				zap.Stringer("args PrevLogTerm", args.PrevLogTerm),
-				zap.Stringer("term", term),
 				zap.Uint32("traceId", args.TraceId))
 			return
 		}
 	}
 
+	// skip until conflict entry
 	numEntries := len(args.Entries)
 	if numEntries > 0 {
 		skipUntil := 0
@@ -126,6 +130,7 @@ func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 
 	reply.Success = true
 	rf.resetElectionTimer()
+	rf.updateLastContact()
 }
 
 func (rf *Raft) sendAppendEntries(server ServerId, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
