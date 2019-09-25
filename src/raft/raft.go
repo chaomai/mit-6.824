@@ -113,16 +113,13 @@ func (s ServerId) String() string {
 type ServerState int
 
 const (
-	PreCandidate ServerState = iota
-	Candidate
+	Candidate ServerState = iota
 	Follower
 	Leader
 )
 
 func (s ServerState) String() string {
 	switch s {
-	case PreCandidate:
-		return "pre candidate"
 	case Candidate:
 		return "candidate"
 	case Follower:
@@ -622,8 +619,6 @@ func (rf *Raft) run(ctx context.Context) {
 
 		rf.goroutineWg.Add(1)
 		switch rf.getState() {
-		case PreCandidate:
-			rf.runPreCandidate(ctx)
 		case Candidate:
 			rf.runCandidate(ctx)
 		case Follower:
@@ -675,9 +670,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		nextIndex:         nil,
 		matchIndex:        nil,
 		applyDuration:     time.Millisecond * 5,
-		heartbeatDuration: time.Millisecond * 50,
+		heartbeatDuration: time.Millisecond * 30,
 		electionDuration:  electionDuration,
-		rpcTimeout:        time.Millisecond * 10,
+		rpcTimeout:        time.Millisecond * 20,
 		state:             Follower,
 		rpcCh:             make(chan *RPCFuture, 1),
 		applyCh:           applyCh,

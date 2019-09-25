@@ -226,14 +226,14 @@ func (rf *Raft) sendRequestVote(server ServerId, args *RequestVoteArgs, reply *R
 }
 
 // call by main goroutine.
-func (rf *Raft) preVote(ctx context.Context) chan voteResult {
+func (rf *Raft) preElectSelf(ctx context.Context) chan voteResult {
 	futureTerm := rf.getCurrentTerm() + 1
 	rf.resetElectionTimer() // reset election timer
 	return rf.sendVote(ctx, PreVote, futureTerm)
 }
 
 // call by main goroutine.
-func (rf *Raft) vote(ctx context.Context) chan voteResult {
+func (rf *Raft) electSelf(ctx context.Context) chan voteResult {
 	rf.setCurrentTerm(rf.getCurrentTerm() + 1) // increment current Term
 	rf.votedFor = rf.me                        // vote for self
 	rf.votedForTerm = rf.getCurrentTerm()

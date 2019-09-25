@@ -42,8 +42,9 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 	rf.setupCandidate()
 	defer rf.cleanupCandidate()
 
-	voteCh := rf.vote(ctx)
+	voteCh := rf.electSelf(ctx)
 	numVotedGranted := 0
+	numVotedDenied := 0
 
 	for rf.getState() == Candidate {
 		select {
@@ -75,8 +76,15 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 			}
 
 			if v.VoteGranted {
-				numVotedGranted += 1
+				numVotedGranted++
 				zap.L().Info("vote granted",
+					zap.Stringer("server", rf.me),
+					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("state", rf.getState()),
+					zap.Stringer("remote server", v.ServerId))
+			} else {
+				numVotedDenied++
+				zap.L().Info("vote denied",
 					zap.Stringer("server", rf.me),
 					zap.Stringer("term", rf.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
@@ -92,9 +100,17 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 					zap.Int("vote", numVotedGranted))
 				return
 			}
+
+			if rf.checkMajority(numVotedDenied) {
+				rf.setState(Follower)
+				zap.L().Info("cannot get majority vote and change to follower",
+					zap.Stringer("server", rf.me),
+					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("state", rf.getState()),
+					zap.Int("vote", numVotedGranted))
+			}
 		case <-rf.electionTimer.C:
-			rf.setState(PreCandidate)
-			zap.L().Info("election timeout and change to pre candidate",
+			zap.L().Info("election timeout",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
