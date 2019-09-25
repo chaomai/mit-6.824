@@ -8,6 +8,13 @@ import (
 	"go.uber.org/zap"
 )
 
+type RequestVoteType int
+
+const (
+	PreVote RequestVoteType = iota
+	Vote
+)
+
 //
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
@@ -19,6 +26,7 @@ type RequestVoteArgs struct {
 	CandidateId  ServerId
 	LastLogIndex Index
 	LastLogTerm  Term
+	Type         RequestVoteType
 }
 
 //
@@ -54,7 +62,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	*reply = rep.(RequestVoteReply)
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 	reply := RequestVoteReply{
 		TraceId:     args.TraceId,
@@ -64,18 +72,14 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 
 	defer func() { rpc.Respond(reply, nil) }()
 
-	if rf.getState() == Leader {
-		// so that removed server won't able to disrupt cluster.
-	} else {
-		if time.Now().Sub(rf.getLastContact()) < rf.electionDuration {
-			// so that removed server won't able to disrupt cluster.
-			zap.L().Debug("just contact with leader and reject",
-				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
-				zap.Stringer("state", rf.getState()),
-				zap.Uint32("traceId", args.TraceId))
-			return
-		}
+	// ensure leader stickiness so that removed or rejoined server won't able to disrupt cluster
+	if time.Now().Sub(rf.getLastContact()) < rf.electionDuration {
+		zap.L().Debug("just contact with leader and reject",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Uint32("traceId", args.TraceId))
+		return
 	}
 
 	if args.Term < rf.getCurrentTerm() {
@@ -87,7 +91,8 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 		return
 	}
 
-	if args.Term > rf.getCurrentTerm() {
+	// only update current term when get actual vote
+	if args.Type == Vote && args.Term > rf.getCurrentTerm() {
 		rf.setCurrentTerm(args.Term)
 		rf.setState(Follower)
 		reply.Term = rf.getCurrentTerm()
@@ -101,8 +106,9 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 
 	lastLogIndex, lastLogTerm := rf.getLastLogInfo()
 
+	// only check duplicated vote work when get actual vote
 	// rf.votedForTerm == args.Term also works here.
-	if rf.votedForTerm == rf.getCurrentTerm() && rf.votedFor != NilServerId {
+	if args.Type == Vote && rf.votedForTerm == rf.getCurrentTerm() && rf.votedFor != NilServerId {
 		if rf.votedFor == args.CandidateId {
 			zap.L().Debug("already voted same candidate in same term and grant",
 				zap.Stringer("server", rf.me),
@@ -143,16 +149,23 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 		return
 	}
 
-	rf.votedFor = args.CandidateId
-	rf.votedForTerm = rf.getCurrentTerm()
-
 	reply.VoteGranted = true
 
-	zap.L().Debug("grant",
-		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
-		zap.Stringer("state", rf.getState()),
-		zap.Uint32("traceId", args.TraceId))
+	if args.Type == PreVote {
+		zap.L().Debug("permit",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Uint32("traceId", args.TraceId))
+	} else {
+		rf.votedFor = args.CandidateId
+		rf.votedForTerm = rf.getCurrentTerm()
+		zap.L().Debug("grant",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Uint32("traceId", args.TraceId))
+	}
 }
 
 //
@@ -212,21 +225,33 @@ func (rf *Raft) sendRequestVote(server ServerId, args *RequestVoteArgs, reply *R
 	return false
 }
 
-// call by main goroutine
+// call by main goroutine.
+func (rf *Raft) preVote(ctx context.Context) chan voteResult {
+	futureTerm := rf.getCurrentTerm() + 1
+	rf.resetElectionTimer() // reset election timer
+	return rf.sendVote(ctx, PreVote, futureTerm)
+}
+
+// call by main goroutine.
 func (rf *Raft) vote(ctx context.Context) chan voteResult {
-	rf.setCurrentTerm(rf.getCurrentTerm() + 1) // Increment current Term
+	rf.setCurrentTerm(rf.getCurrentTerm() + 1) // increment current Term
 	rf.votedFor = rf.me                        // vote for self
 	rf.votedForTerm = rf.getCurrentTerm()
 	rf.resetElectionTimer() // reset election timer
+	return rf.sendVote(ctx, Vote, rf.getCurrentTerm())
+}
+
+// when sending pre-vote, the term is future term. when sending vote the term is increased current term.
+func (rf *Raft) sendVote(ctx context.Context, voteType RequestVoteType, term Term) chan voteResult {
 	lastLogIndex, lastLogTerm := rf.getLastLogInfo()
 
-	// send
 	args := RequestVoteArgs{
 		TraceId:      rand.Uint32(),
-		Term:         rf.getCurrentTerm(),
+		Term:         term,
 		CandidateId:  rf.me,
 		LastLogIndex: lastLogIndex,
 		LastLogTerm:  lastLogTerm,
+		Type:         voteType,
 	}
 
 	zap.L().Info("request vote",

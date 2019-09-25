@@ -3,6 +3,9 @@ package raft
 import (
 	"fmt"
 	"testing"
+	"time"
+
+	"labrpc"
 )
 
 func TestGetFirstEntryOfTerm(t *testing.T) {
@@ -36,4 +39,27 @@ func TestGetFirstEntryOfTermFromEmptyLog(t *testing.T) {
 
 	fmt.Println(rf.getFirstEntryOfTerm(2))
 	fmt.Println(rf.getFirstEntryOfTerm(-1))
+}
+
+func TestCheckMajorityHeartbeat(t *testing.T) {
+	rf := Raft{
+		peers:            make([]*labrpc.ClientEnd, 3),
+		heartBeatInfo:    make(map[ServerId]ackInfo),
+		electionDuration: time.Hour,
+	}
+
+	rf.heartBeatInfo[0] = ackInfo{
+		traceId: 1,
+		ts:      time.Now(),
+	}
+	rf.heartBeatInfo[1] = ackInfo{
+		traceId: 1,
+		ts:      time.Now(),
+	}
+	rf.heartBeatInfo[2] = ackInfo{
+		traceId: 2,
+		ts:      time.Now(),
+	}
+
+	fmt.Println(rf.checkMajorityHeartbeat())
 }

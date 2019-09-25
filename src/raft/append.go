@@ -43,7 +43,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	*reply = rep.(AppendEntriesReply)
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 	reply := AppendEntriesReply{
 		TraceId: args.TraceId,
@@ -103,7 +103,9 @@ func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 			}
 		}
 
+		rf.mu.Lock()
 		rf.log = append(rf.log[:args.Entries[skipUntil].Index], args.Entries[skipUntil:]...)
+		rf.mu.Unlock()
 
 		zap.L().Debug("append log",
 			zap.Stringer("server", rf.me),

@@ -14,7 +14,7 @@ type ackInfo struct {
 	ts      time.Time
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) setupLeader() {
 	zap.L().Debug("setup leader",
 		zap.Stringer("server", rf.me),
@@ -27,6 +27,7 @@ func (rf *Raft) setupLeader() {
 	rf.appendResultCh = make(chan appendResult, 1)
 	rf.replicateNotifyCh = make(map[ServerId]chan Notification)
 	rf.heartBeatNotifyCh = make(map[ServerId]chan Notification)
+	rf.heartBeatInfo = make(map[ServerId]ackInfo)
 
 	for i := 0; i < numServers; i++ {
 		serverId := ServerId(i)
@@ -36,10 +37,14 @@ func (rf *Raft) setupLeader() {
 		rf.matchIndex[i] = 0
 		rf.replicateNotifyCh[serverId] = make(chan Notification, 1)
 		rf.heartBeatNotifyCh[serverId] = make(chan Notification, 1)
+		rf.heartBeatInfo[serverId] = ackInfo{
+			traceId: 0,
+			ts:      time.Time{},
+		}
 	}
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) cleanupLeader() {
 	close(rf.appendResultCh)
 
@@ -48,11 +53,11 @@ func (rf *Raft) cleanupLeader() {
 	rf.appendResultCh = nil
 	rf.replicateNotifyCh = nil
 	rf.heartBeatNotifyCh = nil
+	rf.heartBeatInfo = nil
 }
 
-// call by main goroutine
-// each server has a dedicated heartbeat goroutine.
-func (rf *Raft) heartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, s ServerId) {
+// call by main goroutine.
+func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, curTerm Term) {
 	defer stepDownWg.Done()
 	heartbeatTicker := time.NewTicker(rf.heartbeatDuration)
 
@@ -62,32 +67,26 @@ func (rf *Raft) heartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, s Ser
 			zap.L().Info("heartbeat stop",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
-				zap.Stringer("state", rf.getState()),
-				zap.Stringer("remote server", s))
+				zap.Stringer("state", rf.getState()))
 			return
 		case <-heartbeatTicker.C:
-			zap.L().Info("heartbeat",
-				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
-				zap.Stringer("state", rf.getState()),
-				zap.Stringer("remote server", s))
-			notify(rf.heartBeatNotifyCh[s], rand.Uint32())
+			r := rand.Uint32()
+			for i := range rf.peers {
+				serverId := ServerId(i)
+
+				zap.L().Info("heartbeat",
+					zap.Stringer("server", rf.me),
+					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("state", rf.getState()),
+					zap.Stringer("remote server", serverId))
+
+				notify(rf.heartBeatNotifyCh[serverId], r)
+			}
 		}
 	}
 }
 
-// call by main goroutine
-func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, curTerm Term) {
-	defer stepDownWg.Done()
-
-	for i := range rf.peers {
-		serverId := ServerId(i)
-		stepDownWg.Add(1)
-		go rf.heartbeat(ctx, stepDownWg, serverId)
-	}
-}
-
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) dispatchEntries(entries ...*Entry) {
 	rf.mu.Lock()
 
@@ -111,13 +110,14 @@ func (rf *Raft) dispatchEntries(entries ...*Entry) {
 
 	rf.mu.Unlock()
 
+	r := rand.Uint32()
 	for i := range rf.peers {
 		serverId := ServerId(i)
-		notify(rf.replicateNotifyCh[serverId], rand.Uint32())
+		notify(rf.replicateNotifyCh[serverId], r)
 	}
 }
 
-// call by main goroutine
+// call by main goroutine.
 // each server has a dedicated replicate goroutine.
 func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s ServerId, curTerm Term) {
 	defer stepDownWg.Done()
@@ -191,6 +191,7 @@ func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s Ser
 				ServerId:               rf.me,
 			}
 
+			rf.updateLastContact()
 			trySend(ctx, rf.appendResultCh, ret)
 		} else {
 			zap.L().Debug("send AppendEntries",
@@ -222,7 +223,7 @@ func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s Ser
 	}
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) runReplicate(ctx context.Context, stepDownWg *sync.WaitGroup, curTerm Term) {
 	defer stepDownWg.Done()
 
@@ -233,7 +234,7 @@ func (rf *Raft) runReplicate(ctx context.Context, stepDownWg *sync.WaitGroup, cu
 	}
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) runLeader(ctx context.Context) {
 	defer rf.goroutineWg.Done()
 
@@ -269,7 +270,7 @@ func (rf *Raft) runLeader(ctx context.Context) {
 	}()
 
 	stepDownWg.Add(2)
-	rf.runHeartbeat(leaderCtx, &stepDownWg, rf.getCurrentTerm())
+	go rf.runHeartbeat(leaderCtx, &stepDownWg, rf.getCurrentTerm())
 	rf.runReplicate(leaderCtx, &stepDownWg, rf.getCurrentTerm())
 
 	for rf.getState() == Leader {
@@ -341,6 +342,11 @@ func (rf *Raft) runLeader(ctx context.Context) {
 					zap.Stringer("remote server", a.ServerId),
 					zap.Stringer("next index", rf.getNextIndex(a.ServerId)))
 			}
+		case <-rf.electionTimer.C:
+			zap.L().Info("election timeout and ignore",
+				zap.Stringer("server", rf.me),
+				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("state", rf.getState()))
 		}
 	}
 }

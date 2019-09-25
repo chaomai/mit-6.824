@@ -113,13 +113,16 @@ func (s ServerId) String() string {
 type ServerState int
 
 const (
-	Candidate ServerState = iota
+	PreCandidate ServerState = iota
+	Candidate
 	Follower
 	Leader
 )
 
 func (s ServerState) String() string {
 	switch s {
+	case PreCandidate:
+		return "pre candidate"
 	case Candidate:
 		return "candidate"
 	case Follower:
@@ -181,6 +184,7 @@ type Raft struct {
 	raftCtxCancel     context.CancelFunc
 	replicateNotifyCh map[ServerId]chan Notification
 	heartBeatNotifyCh map[ServerId]chan Notification
+	heartBeatInfo     map[ServerId]ackInfo
 	goroutineWg       sync.WaitGroup
 }
 
@@ -287,6 +291,42 @@ func (rf *Raft) Kill() {
 	// Your code here, if desired.
 	rf.raftCtxCancel()
 	rf.goroutineWg.Wait()
+}
+
+func (rf *Raft) updateHeartbeatInfo(s ServerId, traceId uint32) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.heartBeatInfo[s] = ackInfo{
+		traceId: traceId,
+		ts:      time.Now(),
+	}
+}
+
+// return true if some heartbeat successfully with majority within election timeout.
+// the heartbeat maybe not the most recent one.
+func (rf *Raft) checkMajorityHeartbeat() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	nowTs := time.Now()
+	count := make(map[uint32]int)
+	for _, ackInfo := range rf.heartBeatInfo {
+		if nowTs.Sub(ackInfo.ts) >= rf.electionDuration {
+			continue
+		}
+
+		if _, ok := count[ackInfo.traceId]; ok {
+			count[ackInfo.traceId]++
+		} else {
+			count[ackInfo.traceId] = 1
+		}
+
+		if rf.checkMajority(count[ackInfo.traceId]) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (rf *Raft) getLastContact() time.Time {
@@ -486,7 +526,7 @@ func (rf *Raft) getFirstEntryOfTerm(t Term) (Index, Term) {
 	return rf.log[first].Index, rf.log[first].Term
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) resetElectionTimer() {
 	d := getRandomDuration(rf.electionDuration)
 	rf.electionTimer.Reset(d)
@@ -498,7 +538,7 @@ func (rf *Raft) resetElectionTimer() {
 		zap.Duration("duration", d))
 }
 
-// call by main goroutine
+// call by main goroutine.
 //
 // return true if the num meet majority.
 func (rf *Raft) checkMajority(num int) bool {
@@ -509,7 +549,7 @@ func (rf *Raft) checkMajority(num int) bool {
 	return false
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) handleRPC(rpc *RPCFuture) {
 	switch req := rpc.request.(type) {
 	case *RequestVoteArgs:
@@ -521,7 +561,7 @@ func (rf *Raft) handleRPC(rpc *RPCFuture) {
 	}
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) runApply(ctx context.Context) {
 	defer rf.goroutineWg.Done()
 
@@ -565,7 +605,7 @@ func (rf *Raft) runApply(ctx context.Context) {
 	}
 }
 
-// call by main goroutine
+// call by main goroutine.
 func (rf *Raft) run(ctx context.Context) {
 	defer rf.goroutineWg.Done()
 
@@ -580,15 +620,15 @@ func (rf *Raft) run(ctx context.Context) {
 		default:
 		}
 
+		rf.goroutineWg.Add(1)
 		switch rf.getState() {
+		case PreCandidate:
+			rf.runPreCandidate(ctx)
 		case Candidate:
-			rf.goroutineWg.Add(1)
 			rf.runCandidate(ctx)
 		case Follower:
-			rf.goroutineWg.Add(1)
 			rf.runFollower(ctx)
 		case Leader:
-			rf.goroutineWg.Add(1)
 			rf.runLeader(ctx)
 		}
 	}
@@ -645,7 +685,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		backgroundApplyCh: make(chan Notification),
 		replicateNotifyCh: nil,
 		heartBeatNotifyCh: nil,
-		electionTimer:     time.NewTimer(getRandomDuration(electionDuration)),
+		heartBeatInfo:     nil,
+		electionTimer:     nil,
 	}
 
 	var ctx context.Context
