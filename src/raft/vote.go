@@ -38,6 +38,7 @@ type RequestVoteReply struct {
 	TraceId     uint32
 	Term        Term
 	VoteGranted bool
+	Type        RequestVoteType
 }
 
 type voteResult struct {
@@ -68,6 +69,7 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 		TraceId:     args.TraceId,
 		Term:        rf.getCurrentTerm(),
 		VoteGranted: false,
+		Type:        args.Type,
 	}
 
 	defer func() { rpc.Respond(reply, nil) }()
@@ -268,8 +270,10 @@ func (rf *Raft) sendVote(ctx context.Context, voteType RequestVoteType, term Ter
 
 		if serverId == rf.me {
 			reply := RequestVoteReply{
+				TraceId:     args.TraceId,
 				Term:        rf.getCurrentTerm(),
 				VoteGranted: true,
+				Type:        voteType,
 			}
 
 			ret := voteResult{

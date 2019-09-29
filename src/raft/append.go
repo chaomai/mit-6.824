@@ -115,19 +115,17 @@ func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 	}
 
 	if args.LeaderCommit > rf.getCommitIndex() {
-		if args.LeaderCommit > rf.getCommitIndex() {
-			lastLogIndex, _ := rf.getLastLogInfo()
-			commitIndex := min(args.LeaderCommit, lastLogIndex)
-			rf.setCommitIndex(commitIndex)
+		lastLogIndex, _ := rf.getLastLogInfo()
+		commitIndex := min(args.LeaderCommit, lastLogIndex)
+		rf.setCommitIndex(commitIndex)
 
-			zap.L().Debug("update commit index",
-				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
-				zap.Stringer("state", rf.getState()),
-				zap.Stringer("commit index", commitIndex))
+		zap.L().Debug("update commit index",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Stringer("commit index", commitIndex))
 
-			notify(rf.backgroundApplyCh)
-		}
+		notify(rf.backgroundApplyCh)
 	}
 
 	reply.Success = true

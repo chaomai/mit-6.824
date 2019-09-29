@@ -70,6 +70,12 @@ func (rf *Raft) runFollower(ctx context.Context) {
 				zap.Stringer("state", rf.getState()),
 				zap.Any("v", v))
 
+			if v.Type != PreVote {
+				zap.L().Debug("not pre vote reply and ignore",
+					zap.Any("v", v))
+				continue
+			}
+
 			if v.Term > rf.getCurrentTerm() {
 				rf.setCurrentTerm(v.Term)
 				rf.setState(Follower)
@@ -114,6 +120,11 @@ func (rf *Raft) runFollower(ctx context.Context) {
 					zap.Stringer("term", rf.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Int("vote permit", numPreVotedGranted))
+
+				// although the state isn't changed,
+				// but numPreVotedGranted and numPreVotedGranted should be cleared
+				// in case of error accumulation.
+				return
 			}
 		case <-rf.electionTimer.C:
 			zap.L().Info("election timeout and start pre vote",

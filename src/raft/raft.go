@@ -68,10 +68,10 @@ type Entry struct {
 	Type  EntryType
 }
 
-func makeNoopEntry(index Index, term Term) *Entry {
+func makeNoopEntry() *Entry {
 	entry := &Entry{
-		Index: index,
-		Term:  term,
+		Index: NilIndex,
+		Term:  NilTerm,
 		Data:  nil,
 		Type:  Noop,
 	}
@@ -113,13 +113,16 @@ func (s ServerId) String() string {
 type ServerState int
 
 const (
-	Candidate ServerState = iota
+	NilState ServerState = iota
+	Candidate
 	Follower
 	Leader
 )
 
 func (s ServerState) String() string {
 	switch s {
+	case NilState:
+		return "nilState"
 	case Candidate:
 		return "candidate"
 	case Follower:
@@ -177,12 +180,14 @@ type Raft struct {
 	rpcCh             chan *RPCFuture
 	applyCh           chan ApplyMsg // applyCh is a channel on which the tester or service expects Raft to send ApplyMsg messages
 	appendResultCh    chan appendResult
-	backgroundApplyCh chan Notification
+	commitFutures     []*CommitFuture
+	backgroundApplyCh chan Notification // get notification when commit index is changed
 	raftCtxCancel     context.CancelFunc
 	replicateNotifyCh map[ServerId]chan Notification
 	heartBeatNotifyCh map[ServerId]chan Notification
 	heartBeatInfo     map[ServerId]ackInfo
 	goroutineWg       sync.WaitGroup
+	isLeaderSetup     bool
 }
 
 // return currentTerm and whether this server
@@ -252,7 +257,7 @@ func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) 
 	isLeader = true
 
 	// Your code here (2B).
-	if rf.getState() != Leader {
+	if rf.getState() != Leader || !rf.getIsLeaderSetup() {
 		isLeader = false
 		return
 	}
@@ -274,6 +279,31 @@ func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) 
 		zap.Stringer("term", rf.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()),
 		zap.Any("entry", entry))
+
+	return
+}
+
+func (rf *Raft) StartFuture(command interface{}) (cf *CommitFuture, isLeader bool) {
+	isLeader = true
+	if rf.getState() != Leader {
+		isLeader = false
+		return
+	}
+
+	entry := &Entry{
+		Index: NilIndex,
+		Term:  NilTerm,
+		Data:  command,
+		Type:  Command,
+	}
+
+	rf.dispatchEntries(entry)
+
+	cf = NewCommitFuture(entry.Index, entry.Term)
+
+	rf.mu.Lock()
+	rf.commitFutures = append(rf.commitFutures, cf)
+	rf.mu.Unlock()
 
 	return
 }
@@ -326,6 +356,19 @@ func (rf *Raft) checkMajorityHeartbeat() bool {
 	return false
 }
 
+// ensure leader is fully ready for service.
+func (rf *Raft) getIsLeaderSetup() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.isLeaderSetup
+}
+
+func (rf *Raft) updateIsLeaderSetup(b bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.isLeaderSetup = b
+}
+
 func (rf *Raft) getLastContact() time.Time {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -342,8 +385,8 @@ func (rf *Raft) getLogInfoAt(i Index) (Index, Term) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	logLen := len(rf.log)
-	lastLogIndex := rf.log[logLen-1].Index
+	numLogs := len(rf.log)
+	lastLogIndex := rf.log[numLogs-1].Index
 	if i > lastLogIndex {
 		return NilIndex, NilTerm
 	}
@@ -401,11 +444,11 @@ func (rf *Raft) getPrevLogInfo(index Index) (Index, Term) {
 		zap.L().Panic("the previous log of index 0 doesn't exist")
 	}
 
-	numLog := len(rf.log)
-	if index > Index(numLog) {
+	numLogs := len(rf.log)
+	if index > Index(numLogs) {
 		zap.L().Panic("entry doesn't exist",
 			zap.Stringer("index", index),
-			zap.Int("num of log", numLog))
+			zap.Int("num of log", numLogs))
 	}
 
 	prevLogIndex := rf.log[index-1].Index
@@ -417,9 +460,9 @@ func (rf *Raft) getLastLogInfo() (Index, Term) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	logLen := len(rf.log)
-	lastLogIndex := rf.log[logLen-1].Index
-	lastLogTerm := rf.log[logLen-1].Term
+	numLogs := len(rf.log)
+	lastLogIndex := rf.log[numLogs-1].Index
+	lastLogTerm := rf.log[numLogs-1].Term
 	return lastLogIndex, lastLogTerm
 }
 
@@ -577,26 +620,50 @@ func (rf *Raft) runApply(ctx context.Context) {
 			zap.L().Debug("get background apply notify",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
-				zap.Stringer("state", rf.getState()))
+				zap.Stringer("state", rf.getState()),
+				zap.Stringer("commit index", rf.getCommitIndex()),
+				zap.Stringer("last applied", rf.lastApplied))
+		}
 
-			for rf.getCommitIndex() > rf.lastApplied {
-				rf.lastApplied++
+		// todo update commitFuture
+		commitIndex := rf.getCommitIndex()
 
-				entry := rf.log[rf.lastApplied]
-				if entry.Type == Command {
-					applyMsg := ApplyMsg{
-						CommandValid: true,
-						Command:      entry.Data,
-						CommandIndex: int(rf.lastApplied),
-					}
-					rf.applyCh <- applyMsg
+		rf.mu.Lock()
+		i := 0
+		numCFs := len(rf.commitFutures)
+		for i < numCFs {
+			if rf.commitFutures[i].index <= commitIndex {
+				rf.commitFutures[i].Respond(nil)
+			} else {
+				break
+			}
+		}
 
-					zap.L().Info("background apply",
-						zap.Stringer("server", rf.me),
-						zap.Stringer("term", rf.getCurrentTerm()),
-						zap.Stringer("state", rf.getState()),
-						zap.Any("entry", entry))
+		if numCFs > 0 {
+			rf.commitFutures = rf.commitFutures[i+1:]
+		}
+		rf.mu.Unlock()
+
+		for commitIndex > rf.lastApplied {
+			rf.lastApplied++
+
+			rf.mu.Lock()
+			entry := rf.log[rf.lastApplied]
+			rf.mu.Unlock()
+
+			if entry.Type == Command {
+				applyMsg := ApplyMsg{
+					CommandValid: true,
+					Command:      entry.Data,
+					CommandIndex: int(rf.lastApplied),
 				}
+				rf.applyCh <- applyMsg
+
+				zap.L().Info("background apply",
+					zap.Stringer("server", rf.me),
+					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("state", rf.getState()),
+					zap.Any("entry", entry))
 			}
 		}
 	}
@@ -669,7 +736,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		lastApplied:       0,
 		nextIndex:         nil,
 		matchIndex:        nil,
-		applyDuration:     time.Millisecond * 5,
+		applyDuration:     time.Millisecond * 10,
 		heartbeatDuration: time.Millisecond * 30,
 		electionDuration:  electionDuration,
 		rpcTimeout:        time.Millisecond * 20,
@@ -677,11 +744,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		rpcCh:             make(chan *RPCFuture, 1),
 		applyCh:           applyCh,
 		appendResultCh:    nil,
+		commitFutures:     make([]*CommitFuture, 0),
 		backgroundApplyCh: make(chan Notification),
 		replicateNotifyCh: nil,
 		heartBeatNotifyCh: nil,
 		heartBeatInfo:     nil,
 		electionTimer:     nil,
+		isLeaderSetup:     false,
 	}
 
 	var ctx context.Context
@@ -691,7 +760,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 
 	if len(rf.log) == 0 {
-		rf.log = append(rf.log, makeNoopEntry(0, rf.getCurrentTerm()))
+		entry := makeNoopEntry()
+		entry.Index = 0
+		rf.log = append(rf.log, entry)
 	}
 
 	rf.goroutineWg.Add(2)

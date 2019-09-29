@@ -42,6 +42,8 @@ func (rf *Raft) setupLeader() {
 			ts:      time.Time{},
 		}
 	}
+
+	rf.updateIsLeaderSetup(true)
 }
 
 // call by main goroutine.
@@ -54,6 +56,8 @@ func (rf *Raft) cleanupLeader() {
 	rf.replicateNotifyCh = nil
 	rf.heartBeatNotifyCh = nil
 	rf.heartBeatInfo = nil
+
+	rf.updateIsLeaderSetup(false)
 }
 
 // call by main goroutine.
@@ -90,13 +94,8 @@ func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, cu
 func (rf *Raft) dispatchEntries(entries ...*Entry) {
 	rf.mu.Lock()
 
-	logLen := len(rf.log)
-	var lastLogIndex Index
-	if logLen != 0 {
-		lastLogIndex = rf.log[logLen-1].Index
-	} else {
-		lastLogIndex = 0
-	}
+	numLogs := len(rf.log)
+	lastLogIndex := rf.log[numLogs-1].Index
 
 	for i := range entries {
 		entry := entries[i]
@@ -250,9 +249,7 @@ func (rf *Raft) runLeader(ctx context.Context) {
 		zap.Stringer("server", rf.me),
 		zap.Stringer("term", rf.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
-	lastLogIndex, _ := rf.getLastLogInfo()
-	noopEntry := makeNoopEntry(lastLogIndex+1, rf.getCurrentTerm())
-	rf.dispatchEntries(noopEntry)
+	rf.dispatchEntries(makeNoopEntry())
 
 	leaderCtx, cancel := context.WithCancel(ctx)
 	stepDownWg := sync.WaitGroup{}

@@ -63,6 +63,12 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 				zap.Stringer("state", rf.getState()),
 				zap.Any("v", v))
 
+			if v.Type != Vote {
+				zap.L().Debug("not vote reply and ignore",
+					zap.Any("v", v))
+				continue
+			}
+
 			if v.Term > rf.getCurrentTerm() {
 				rf.setCurrentTerm(v.Term)
 				rf.setState(Follower)
@@ -108,6 +114,7 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 					zap.Stringer("term", rf.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Int("vote", numVotedGranted))
+				return
 			}
 		case <-rf.electionTimer.C:
 			zap.L().Info("election timeout",
