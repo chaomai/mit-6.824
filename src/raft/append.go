@@ -129,7 +129,6 @@ func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 	}
 
 	reply.Success = true
-	rf.resetElectionTimer()
 	rf.updateLastContact()
 }
 

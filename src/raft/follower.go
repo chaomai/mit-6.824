@@ -13,20 +13,6 @@ func (rf *Raft) setupFollower() {
 		zap.Stringer("server", rf.me),
 		zap.Stringer("term", rf.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
-
-	if rf.electionTimer == nil {
-		rf.electionTimer = time.NewTimer(getRandomDuration(rf.electionDuration))
-	} else {
-		// drain the channel before run
-		if !rf.electionTimer.Stop() {
-			select {
-			case <-rf.electionTimer.C:
-			default:
-			}
-		}
-
-		rf.resetElectionTimer()
-	}
 }
 
 // call by main goroutine.
@@ -45,6 +31,8 @@ func (rf *Raft) runFollower(ctx context.Context) {
 		zap.Stringer("server", rf.me),
 		zap.Stringer("term", rf.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
+
+	electionTimer := time.NewTimer(getRandomDuration(rf.electionDuration))
 
 	rf.setupFollower()
 	defer rf.cleanupFollower()
@@ -126,7 +114,14 @@ func (rf *Raft) runFollower(ctx context.Context) {
 				// in case of error accumulation.
 				return
 			}
-		case <-rf.electionTimer.C:
+		case <-electionTimer.C:
+			resetTimer(electionTimer, rf.electionDuration)
+
+			now := time.Now()
+			if now.Sub(rf.getLastContact()) < rf.electionDuration {
+				continue
+			}
+
 			zap.L().Info("election timeout and start pre vote",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),

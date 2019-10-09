@@ -30,6 +30,12 @@ func getRandomDuration(min time.Duration) time.Duration {
 	return min + delta
 }
 
+// reset timer with random duration
+func resetTimer(t *time.Timer, d time.Duration) {
+	rd := getRandomDuration(d)
+	t.Reset(rd)
+}
+
 // non-blocking notify
 func notify(ch chan Notification, traceId ...uint32) {
 	var id uint32

@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -12,14 +13,6 @@ func (rf *Raft) setupCandidate() {
 		zap.Stringer("server", rf.me),
 		zap.Stringer("term", rf.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
-
-	// drain the channel before run
-	if !rf.electionTimer.Stop() {
-		select {
-		case <-rf.electionTimer.C:
-		default:
-		}
-	}
 }
 
 // call by main goroutine.
@@ -38,6 +31,8 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 		zap.Stringer("server", rf.me),
 		zap.Stringer("term", rf.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
+
+	electionTimer := time.NewTimer(getRandomDuration(rf.electionDuration))
 
 	rf.setupCandidate()
 	defer rf.cleanupCandidate()
@@ -116,7 +111,14 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 					zap.Int("vote", numVotedGranted))
 				return
 			}
-		case <-rf.electionTimer.C:
+		case <-electionTimer.C:
+			resetTimer(electionTimer, rf.electionDuration)
+
+			now := time.Now()
+			if now.Sub(rf.getLastContact()) < rf.electionDuration {
+				continue
+			}
+
 			zap.L().Info("election timeout",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),

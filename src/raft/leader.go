@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -57,13 +58,27 @@ func (rf *Raft) cleanupLeader() {
 	rf.heartBeatNotifyCh = nil
 	rf.heartBeatInfo = nil
 
+	commitIndex := rf.getCommitIndex()
+
+	rf.mu.Lock()
+	i := 0
+	numCFs := len(rf.commitFutures)
+	for i < numCFs {
+		if rf.commitFutures[i].index <= commitIndex {
+			rf.commitFutures[i].Respond(nil)
+		} else {
+			rf.commitFutures[i].Respond(fmt.Errorf("commit error"))
+		}
+	}
+	rf.mu.Unlock()
+
 	rf.updateIsLeaderSetup(false)
 }
 
 // call by main goroutine.
 func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, curTerm Term) {
 	defer stepDownWg.Done()
-	heartbeatTicker := time.NewTicker(rf.heartbeatDuration)
+	heartbeatTimer := time.NewTimer(rf.heartbeatDuration)
 
 	for {
 		select {
@@ -73,7 +88,9 @@ func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, cu
 				zap.Stringer("term", rf.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 			return
-		case <-heartbeatTicker.C:
+		case <-heartbeatTimer.C:
+			resetTimer(heartbeatTimer, rf.heartbeatDuration)
+
 			r := rand.Uint32()
 			for i := range rf.peers {
 				serverId := ServerId(i)
@@ -339,11 +356,6 @@ func (rf *Raft) runLeader(ctx context.Context) {
 					zap.Stringer("remote server", a.ServerId),
 					zap.Stringer("next index", rf.getNextIndex(a.ServerId)))
 			}
-		case <-rf.electionTimer.C:
-			zap.L().Info("election timeout and ignore",
-				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
-				zap.Stringer("state", rf.getState()))
 		}
 	}
 }

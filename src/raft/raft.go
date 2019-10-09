@@ -172,7 +172,6 @@ type Raft struct {
 	applyDuration     time.Duration
 	heartbeatDuration time.Duration
 	electionDuration  time.Duration
-	electionTimer     *time.Timer
 	rpcTimeout        time.Duration
 	lastContact       time.Time
 	state             ServerState
@@ -195,7 +194,7 @@ type Raft struct {
 func (rf *Raft) GetState() (term int, isLeader bool) {
 	// Your code here (2A).
 	term = int(rf.getCurrentTerm())
-	isLeader = rf.getState() == Leader
+	isLeader = rf.isLeader()
 	return
 }
 
@@ -237,55 +236,9 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
-//
-// the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
-// server isn't the leader, returns false. otherwise start the
-// agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
-// may fail or lose an election. even if the Raft instance has been killed,
-// this function should return gracefully.
-//
-// the first return value is the index that the command will appear at
-// if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
-// the leader.
-//
-func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) {
-	index = int(NilIndex)
-	term = int(NilTerm)
-	isLeader = true
-
-	// Your code here (2B).
-	if rf.getState() != Leader || !rf.getIsLeaderSetup() {
-		isLeader = false
-		return
-	}
-
-	entry := &Entry{
-		Index: NilIndex,
-		Term:  NilTerm,
-		Data:  command,
-		Type:  Command,
-	}
-
-	rf.dispatchEntries(entry)
-
-	index = int(entry.Index)
-	term = int(entry.Term)
-
-	zap.L().Debug("start",
-		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
-		zap.Stringer("state", rf.getState()),
-		zap.Any("entry", entry))
-
-	return
-}
-
 func (rf *Raft) StartFuture(command interface{}) (cf *CommitFuture, isLeader bool) {
 	isLeader = true
-	if rf.getState() != Leader {
+	if !rf.isLeader() || !rf.getIsLeaderSetup() {
 		isLeader = false
 		return
 	}
@@ -304,6 +257,133 @@ func (rf *Raft) StartFuture(command interface{}) (cf *CommitFuture, isLeader boo
 	rf.mu.Lock()
 	rf.commitFutures = append(rf.commitFutures, cf)
 	rf.mu.Unlock()
+
+	return
+}
+
+//
+// the service using Raft (e.g. a k/v server) wants to start
+// agreement on the next command to be appended to Raft's log. if this
+// server isn't the leader, returns false. otherwise start the
+// agreement and return immediately. there is no guarantee that this
+// command will ever be committed to the Raft log, since the leader
+// may fail or lose an election. even if the Raft instance has been killed,
+// this function should return gracefully.
+//
+// the first return value is the index that the command will appear at
+// if it's ever committed. the second return value is the current
+// term. the third return value is true if this server believes it is
+// the leader.
+//
+// func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) {
+// 	index = int(NilIndex)
+// 	term = int(NilTerm)
+// 	isLeader = true
+//
+// 	// Your code here (2B).
+// 	if rf.getState() != Leader || !rf.getIsLeaderSetup() {
+// 		isLeader = false
+// 		return
+// 	}
+//
+// 	entry := &Entry{
+// 		Index: NilIndex,
+// 		Term:  NilTerm,
+// 		Data:  command,
+// 		Type:  Command,
+// 	}
+//
+// 	rf.dispatchEntries(entry)
+//
+// 	index = int(entry.Index)
+// 	term = int(entry.Term)
+//
+// 	zap.L().Debug("start",
+// 		zap.Stringer("server", rf.me),
+// 		zap.Stringer("term", rf.getCurrentTerm()),
+// 		zap.Stringer("state", rf.getState()),
+// 		zap.Any("entry", entry))
+//
+// 	return
+// }
+//
+// ensure the command is committed before return.
+func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) {
+	index = int(NilIndex)
+	term = int(NilTerm)
+	isLeader = true
+
+	// Your code here (2B).
+	cf, isLeader := rf.StartFuture(command)
+
+	if !isLeader {
+		return
+	}
+
+	zap.L().Debug("start",
+		zap.Stringer("server", rf.me),
+		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("state", rf.getState()),
+		zap.Any("command", command))
+
+	// wait for commit or error
+	if idx, t, err := cf.Get(); err != nil {
+		zap.L().Error("start future error",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Any("command", command),
+			zap.Error(err))
+		isLeader = false
+	} else {
+		zap.L().Debug("start future finish",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Any("command", command))
+		index = int(idx)
+		term = int(t)
+	}
+
+	return
+}
+
+func (rf *Raft) StartWithCtx(ctx context.Context, command interface{}) (index int, term int, isLeader bool) {
+	index = int(NilIndex)
+	term = int(NilTerm)
+	isLeader = true
+
+	// Your code here (2B).
+	cf, isLeader := rf.StartFuture(command)
+
+	if !isLeader {
+		return
+	}
+
+	zap.L().Debug("start",
+		zap.Stringer("server", rf.me),
+		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("state", rf.getState()),
+		zap.Any("command", command))
+
+	// wait for commit or error
+	if idx, t, err := cf.GetWithCtx(ctx); err != nil {
+		zap.L().Error("start future error",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Any("command", command),
+			zap.Error(err))
+		isLeader = false
+	} else {
+		zap.L().Debug("start future finish",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Any("command", command))
+		index = int(idx)
+		term = int(t)
+	}
 
 	return
 }
@@ -356,7 +436,7 @@ func (rf *Raft) checkMajorityHeartbeat() bool {
 	return false
 }
 
-// ensure leader is fully ready for service.
+// ensure leader finish setup
 func (rf *Raft) getIsLeaderSetup() bool {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -532,6 +612,22 @@ func (rf *Raft) getState() ServerState {
 	return rf.state
 }
 
+func (rf *Raft) isLeader() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.state != Leader {
+		return false
+	}
+
+	entry := rf.log[rf.commitIndex]
+	if entry.Term == rf.currentTerm {
+		return true
+	}
+
+	return false
+}
+
 // get the upper bound of term.
 func (rf *Raft) getFirstEntryOfTerm(t Term) (Index, Term) {
 	rf.mu.Lock()
@@ -567,18 +663,6 @@ func (rf *Raft) getFirstEntryOfTerm(t Term) (Index, Term) {
 }
 
 // call by main goroutine.
-func (rf *Raft) resetElectionTimer() {
-	d := getRandomDuration(rf.electionDuration)
-	rf.electionTimer.Reset(d)
-
-	zap.L().Info("reset election timer",
-		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
-		zap.Stringer("state", rf.getState()),
-		zap.Duration("duration", d))
-}
-
-// call by main goroutine.
 //
 // return true if the num meet majority.
 func (rf *Raft) checkMajority(num int) bool {
@@ -606,6 +690,7 @@ func (rf *Raft) runApply(ctx context.Context) {
 	defer rf.goroutineWg.Done()
 
 	backgroundTicker := time.NewTicker(rf.applyDuration)
+	defer backgroundTicker.Stop()
 
 	for {
 		select {
@@ -617,15 +702,15 @@ func (rf *Raft) runApply(ctx context.Context) {
 			return
 		case <-backgroundTicker.C:
 		case <-rf.backgroundApplyCh:
-			zap.L().Debug("get background apply notify",
-				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
-				zap.Stringer("state", rf.getState()),
-				zap.Stringer("commit index", rf.getCommitIndex()),
-				zap.Stringer("last applied", rf.lastApplied))
 		}
 
-		// todo update commitFuture
+		zap.L().Debug("get background apply notify",
+			zap.Stringer("server", rf.me),
+			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("state", rf.getState()),
+			zap.Stringer("commit index", rf.getCommitIndex()),
+			zap.Stringer("last applied", rf.lastApplied))
+
 		commitIndex := rf.getCommitIndex()
 
 		rf.mu.Lock()
@@ -637,10 +722,12 @@ func (rf *Raft) runApply(ctx context.Context) {
 			} else {
 				break
 			}
+
+			i++
 		}
 
-		if numCFs > 0 {
-			rf.commitFutures = rf.commitFutures[i+1:]
+		if i > 0 {
+			rf.commitFutures = rf.commitFutures[i:]
 		}
 		rf.mu.Unlock()
 
@@ -749,7 +836,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		replicateNotifyCh: nil,
 		heartBeatNotifyCh: nil,
 		heartBeatInfo:     nil,
-		electionTimer:     nil,
 		isLeaderSetup:     false,
 	}
 
