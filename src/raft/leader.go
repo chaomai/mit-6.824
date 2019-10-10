@@ -26,7 +26,6 @@ func (rf *Raft) setupLeader() {
 	rf.nextIndex = make([]Index, numServers)
 	rf.matchIndex = make([]Index, numServers)
 	rf.appendResultCh = make(chan appendResult, 1)
-	rf.commitFutures = make([]*CommitFuture, 0)
 	rf.replicateNotifyCh = make(map[ServerId]chan Notification)
 	rf.heartBeatNotifyCh = make(map[ServerId]chan Notification)
 	rf.heartBeatInfo = make(map[ServerId]ackInfo)
@@ -45,6 +44,10 @@ func (rf *Raft) setupLeader() {
 		}
 	}
 
+	rf.mu.Lock()
+	rf.commitFutures = make([]*CommitFuture, 0)
+	rf.mu.Unlock()
+
 	rf.updateIsLeaderSetup(true)
 }
 
@@ -61,12 +64,12 @@ func (rf *Raft) cleanupLeader() {
 			cf.Respond(fmt.Errorf("commit error"))
 		}
 	}
+	rf.commitFutures = nil
 	rf.mu.Unlock()
 
 	rf.nextIndex = nil
 	rf.matchIndex = nil
 	rf.appendResultCh = nil
-	rf.commitFutures = nil
 	rf.replicateNotifyCh = nil
 	rf.heartBeatNotifyCh = nil
 	rf.heartBeatInfo = nil
@@ -341,13 +344,12 @@ func (rf *Raft) runLeader(ctx context.Context) {
 						zap.Stringer("commit index", rf.getCommitIndex()))
 				}
 			} else {
-				// if a.ConflictTermFirstIndex <= 0 {
-				// 	send snapshot or send the first entry after index 0.
-				// rf.setNextIndex(a.ServerId, 1)
-				// } else {
-				// 	rf.setNextIndex(a.ServerId, a.ConflictTermFirstIndex)
-				// }
-				rf.setNextIndex(a.ServerId, a.ConflictTermFirstIndex)
+				firstLogIndex, _ := rf.getFirstLogInfo()
+				if a.ConflictTermFirstIndex < firstLogIndex {
+					// no such a entry currently available, send snapshot
+				} else {
+					rf.setNextIndex(a.ServerId, a.ConflictTermFirstIndex)
+				}
 
 				zap.L().Debug("decrease next index",
 					zap.Stringer("server", rf.me),

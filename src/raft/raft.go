@@ -536,6 +536,15 @@ func (rf *Raft) getPrevLogInfo(index Index) (Index, Term) {
 	return prevLogIndex, prevLogTerm
 }
 
+func (rf *Raft) getFirstLogInfo() (Index, Term) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	firstLogIndex := rf.log[0].Index
+	firstLogTerm := rf.log[0].Term
+	return firstLogIndex, firstLogTerm
+}
+
 func (rf *Raft) getLastLogInfo() (Index, Term) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
