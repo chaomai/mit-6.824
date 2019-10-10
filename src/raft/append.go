@@ -78,11 +78,23 @@ func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 	if args.PrevLogIndex > 0 {
 		index, term := rf.getLogInfoAt(args.PrevLogIndex)
 
-		if index <= 0 || term != args.PrevLogTerm {
-			firstIndex, _ := rf.getFirstEntryOfTerm(args.PrevLogTerm)
+		if index <= 0 {
+			// no such a prev entry
+			lastLogIndex, _ := rf.getLastLogInfo()
+			reply.ConflictTermFirstIndex = lastLogIndex + 1
+
+			zap.L().Debug("no such a prev log index and ignore",
+				zap.Stringer("server", rf.me),
+				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("state", rf.getState()),
+				zap.Uint32("traceId", args.TraceId))
+			return
+		} else if term != args.PrevLogTerm {
+			// include the term of the conflicting entry and the first index it stores for that term.
+			firstIndex, _ := rf.getLowerBoundOfTerm(term)
 			reply.ConflictTermFirstIndex = firstIndex
 
-			zap.L().Debug("no such a prev log index or prev log term is different and ignore",
+			zap.L().Debug("prev log term is different and ignore",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),

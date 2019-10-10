@@ -150,8 +150,11 @@ func (cf *CommitFuture) GetWithCtx(ctx context.Context) (index Index, term Term,
 	// wait until context is canceled
 	select {
 	case <-ctx.Done():
-		index = cf.index
-		term = cf.term
+		err = ctx.Err()
+		index = NilIndex
+		term = NilTerm
+		// index = cf.index
+		// term = cf.term
 		return
 	case <-ch:
 		// wait

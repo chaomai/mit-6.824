@@ -106,8 +106,6 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 			zap.Uint32("traceId", args.TraceId))
 	}
 
-	lastLogIndex, lastLogTerm := rf.getLastLogInfo()
-
 	// only check duplicated vote work when get actual vote
 	// rf.votedForTerm == args.Term also works here.
 	if args.Type == Vote && rf.votedForTerm == rf.getCurrentTerm() && rf.votedFor != NilServerId {
@@ -128,6 +126,8 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 			zap.Uint32("traceId", args.TraceId))
 		return
 	}
+
+	lastLogIndex, lastLogTerm := rf.getLastLogInfo()
 
 	if args.LastLogTerm < lastLogTerm {
 		zap.L().Debug("candidate has older LastLogTerm and reject",
@@ -160,6 +160,7 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 	} else {
+		rf.updateLastContact()
 		rf.votedFor = args.CandidateId
 		rf.votedForTerm = rf.getCurrentTerm()
 		zap.L().Debug("grant",

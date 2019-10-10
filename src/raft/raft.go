@@ -236,10 +236,10 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
-func (rf *Raft) StartFuture(command interface{}) (cf *CommitFuture, isLeader bool) {
-	isLeader = true
+func (rf *Raft) StartFuture(command interface{}) (cf *CommitFuture, ok bool) {
+	ok = true
 	if !rf.isLeader() || !rf.getIsLeaderSetup() {
-		isLeader = false
+		ok = false
 		return
 	}
 
@@ -308,15 +308,15 @@ func (rf *Raft) StartFuture(command interface{}) (cf *CommitFuture, isLeader boo
 // }
 //
 // ensure the command is committed before return.
-func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) {
+func (rf *Raft) Start(command interface{}) (index int, term int, ok bool) {
 	index = int(NilIndex)
 	term = int(NilTerm)
-	isLeader = true
+	ok = true
 
 	// Your code here (2B).
-	cf, isLeader := rf.StartFuture(command)
+	cf, ok := rf.StartFuture(command)
 
-	if !isLeader {
+	if !ok {
 		return
 	}
 
@@ -334,7 +334,7 @@ func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) 
 			zap.Stringer("state", rf.getState()),
 			zap.Any("command", command),
 			zap.Error(err))
-		isLeader = false
+		ok = false
 	} else {
 		zap.L().Debug("start future finish",
 			zap.Stringer("server", rf.me),
@@ -348,15 +348,15 @@ func (rf *Raft) Start(command interface{}) (index int, term int, isLeader bool) 
 	return
 }
 
-func (rf *Raft) StartWithCtx(ctx context.Context, command interface{}) (index int, term int, isLeader bool) {
+func (rf *Raft) StartWithCtx(ctx context.Context, command interface{}) (index int, term int, ok bool) {
 	index = int(NilIndex)
 	term = int(NilTerm)
-	isLeader = true
+	ok = true
 
 	// Your code here (2B).
-	cf, isLeader := rf.StartFuture(command)
+	cf, ok := rf.StartFuture(command)
 
-	if !isLeader {
+	if !ok {
 		return
 	}
 
@@ -374,7 +374,7 @@ func (rf *Raft) StartWithCtx(ctx context.Context, command interface{}) (index in
 			zap.Stringer("state", rf.getState()),
 			zap.Any("command", command),
 			zap.Error(err))
-		isLeader = false
+		ok = false
 	} else {
 		zap.L().Debug("start future finish",
 			zap.Stringer("server", rf.me),
@@ -628,8 +628,8 @@ func (rf *Raft) isLeader() bool {
 	return false
 }
 
-// get the upper bound of term.
-func (rf *Raft) getFirstEntryOfTerm(t Term) (Index, Term) {
+// get the lower bound of term.
+func (rf *Raft) getLowerBoundOfTerm(t Term) (Index, Term) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -639,27 +639,27 @@ func (rf *Raft) getFirstEntryOfTerm(t Term) (Index, Term) {
 		zap.Stringer("state", rf.state),
 		zap.Any("logs", rf.log))
 
-	// find upper bound
-	first0 := -1
-	last0 := len(rf.log) - 1
+	// find lower bound
+	first0 := 0
+	last0 := len(rf.log)
 
 	first := first0
 	last := last0
 
 	for first < last {
-		mid := last - (last-first)/2
-		if rf.log[mid].Term > t {
-			last = mid - 1
+		mid := first + (last-first)/2
+		if rf.log[mid].Term < t {
+			first = mid + 1
 		} else {
-			first = mid
+			last = mid
 		}
 	}
 
-	if first == first0 {
+	if last == last0 {
 		return NilIndex, NilTerm
 	}
 
-	return rf.log[first].Index, rf.log[first].Term
+	return rf.log[last].Index, rf.log[last].Term
 }
 
 // call by main goroutine.
@@ -715,10 +715,9 @@ func (rf *Raft) runApply(ctx context.Context) {
 
 		rf.mu.Lock()
 		i := 0
-		numCFs := len(rf.commitFutures)
-		for i < numCFs {
-			if rf.commitFutures[i].index <= commitIndex {
-				rf.commitFutures[i].Respond(nil)
+		for _, cf := range rf.commitFutures {
+			if cf.index <= commitIndex {
+				cf.Respond(nil)
 			} else {
 				break
 			}
@@ -809,8 +808,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	defer func() { _ = logger.Sync() }()
 	zap.ReplaceGlobals(logger)
 
-	electionDuration := time.Millisecond * 300
-
 	rf := &Raft{
 		peers:             peers,
 		persister:         persister,
@@ -823,15 +820,15 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		lastApplied:       0,
 		nextIndex:         nil,
 		matchIndex:        nil,
-		applyDuration:     time.Millisecond * 10,
+		applyDuration:     time.Millisecond * 100,
 		heartbeatDuration: time.Millisecond * 30,
-		electionDuration:  electionDuration,
+		electionDuration:  time.Millisecond * 300,
 		rpcTimeout:        time.Millisecond * 20,
 		state:             Follower,
 		rpcCh:             make(chan *RPCFuture, 1),
 		applyCh:           applyCh,
 		appendResultCh:    nil,
-		commitFutures:     make([]*CommitFuture, 0),
+		commitFutures:     nil,
 		backgroundApplyCh: make(chan Notification),
 		replicateNotifyCh: nil,
 		heartBeatNotifyCh: nil,

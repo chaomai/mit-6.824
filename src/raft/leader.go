@@ -26,6 +26,7 @@ func (rf *Raft) setupLeader() {
 	rf.nextIndex = make([]Index, numServers)
 	rf.matchIndex = make([]Index, numServers)
 	rf.appendResultCh = make(chan appendResult, 1)
+	rf.commitFutures = make([]*CommitFuture, 0)
 	rf.replicateNotifyCh = make(map[ServerId]chan Notification)
 	rf.heartBeatNotifyCh = make(map[ServerId]chan Notification)
 	rf.heartBeatInfo = make(map[ServerId]ackInfo)
@@ -51,26 +52,24 @@ func (rf *Raft) setupLeader() {
 func (rf *Raft) cleanupLeader() {
 	close(rf.appendResultCh)
 
-	rf.nextIndex = nil
-	rf.matchIndex = nil
-	rf.appendResultCh = nil
-	rf.replicateNotifyCh = nil
-	rf.heartBeatNotifyCh = nil
-	rf.heartBeatInfo = nil
-
 	commitIndex := rf.getCommitIndex()
-
 	rf.mu.Lock()
-	i := 0
-	numCFs := len(rf.commitFutures)
-	for i < numCFs {
-		if rf.commitFutures[i].index <= commitIndex {
-			rf.commitFutures[i].Respond(nil)
+	for _, cf := range rf.commitFutures {
+		if cf.index <= commitIndex {
+			cf.Respond(nil)
 		} else {
-			rf.commitFutures[i].Respond(fmt.Errorf("commit error"))
+			cf.Respond(fmt.Errorf("commit error"))
 		}
 	}
 	rf.mu.Unlock()
+
+	rf.nextIndex = nil
+	rf.matchIndex = nil
+	rf.appendResultCh = nil
+	rf.commitFutures = nil
+	rf.replicateNotifyCh = nil
+	rf.heartBeatNotifyCh = nil
+	rf.heartBeatInfo = nil
 
 	rf.updateIsLeaderSetup(false)
 }
@@ -342,12 +341,13 @@ func (rf *Raft) runLeader(ctx context.Context) {
 						zap.Stringer("commit index", rf.getCommitIndex()))
 				}
 			} else {
-				if a.ConflictTermFirstIndex <= 0 {
-					// send snapshot or send the first entry after index 0.
-					rf.setNextIndex(a.ServerId, 1)
-				} else {
-					rf.setNextIndex(a.ServerId, a.ConflictTermFirstIndex)
-				}
+				// if a.ConflictTermFirstIndex <= 0 {
+				// 	send snapshot or send the first entry after index 0.
+				// rf.setNextIndex(a.ServerId, 1)
+				// } else {
+				// 	rf.setNextIndex(a.ServerId, a.ConflictTermFirstIndex)
+				// }
+				rf.setNextIndex(a.ServerId, a.ConflictTermFirstIndex)
 
 				zap.L().Debug("decrease next index",
 					zap.Stringer("server", rf.me),
