@@ -64,6 +64,7 @@ func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 
 	if args.Term > rf.getCurrentTerm() {
 		rf.setCurrentTerm(args.Term)
+		rf.setVoteFor(NilServerId)
 		rf.setState(Follower)
 		reply.Term = rf.getCurrentTerm()
 

@@ -140,6 +140,38 @@ type Notification struct {
 	TraceId uint32
 }
 
+// raft state
+type raftState struct {
+	mutex       sync.Mutex
+	currentTerm Term     // latest term server has seen
+	votedFor    ServerId // candidateId that received vote in current term, invalid if currentTerm changed.
+	log         []*Entry
+}
+
+func (rf *raftState) setCurrentTerm(t Term) {
+	rf.mutex.Lock()
+	defer rf.mutex.Unlock()
+	rf.currentTerm = t
+}
+
+func (rf *raftState) getCurrentTerm() Term {
+	rf.mutex.Lock()
+	defer rf.mutex.Unlock()
+	return rf.currentTerm
+}
+
+func (rf *raftState) setVoteFor(s ServerId) {
+	rf.mutex.Lock()
+	defer rf.mutex.Unlock()
+	rf.votedFor = s
+}
+
+func (rf *raftState) getVoteFor() ServerId {
+	rf.mutex.Lock()
+	defer rf.mutex.Unlock()
+	return rf.votedFor
+}
+
 //
 // A Go object implementing a single Raft peer.
 //
@@ -154,12 +186,9 @@ type Raft struct {
 	// state a Raft server must maintain.
 
 	// Persistent state on all servers
-	currentTerm Term // latest term server has seen
-	// candidateId that received vote in current term.
-	// votedFor is valid only if votedForTerm == args.Term.
-	votedFor     ServerId
-	votedForTerm Term // the term that candidate received vote
-	log          []*Entry
+	currentTerm Term     // latest term server has seen
+	votedFor    ServerId // candidateId that received vote in current term, invalid if currentTerm changed.
+	log         []*Entry
 
 	// Volatile state on all servers
 	commitIndex Index
@@ -567,6 +596,30 @@ func (rf *Raft) getCurrentTerm() Term {
 	return rf.currentTerm
 }
 
+func (rf *Raft) setState(s ServerState) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.state = s
+}
+
+func (rf *Raft) getState() ServerState {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.state
+}
+
+func (rf *Raft) setVoteFor(s ServerId) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.votedFor = s
+}
+
+func (rf *Raft) getVoteFor() ServerId {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.votedFor
+}
+
 func (rf *Raft) setCommitIndex(i Index) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -607,18 +660,6 @@ func (rf *Raft) updateCommitIndex(n Index) {
 		rf.commitIndex = n
 		notify(rf.backgroundApplyCh)
 	}
-}
-
-func (rf *Raft) setState(s ServerState) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	rf.state = s
-}
-
-func (rf *Raft) getState() ServerState {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	return rf.state
 }
 
 func (rf *Raft) isLeader() bool {
@@ -823,7 +864,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		me:                ServerId(me),
 		currentTerm:       0,
 		votedFor:          NilServerId,
-		votedForTerm:      0,
 		log:               make([]*Entry, 0),
 		commitIndex:       0,
 		lastApplied:       0,

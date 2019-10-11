@@ -96,6 +96,7 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 	// only update current term when get actual vote
 	if args.Type == Vote && args.Term > rf.getCurrentTerm() {
 		rf.setCurrentTerm(args.Term)
+		rf.setVoteFor(NilServerId)
 		rf.setState(Follower)
 		reply.Term = rf.getCurrentTerm()
 
@@ -107,9 +108,8 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 	}
 
 	// only check duplicated vote work when get actual vote
-	// rf.votedForTerm == args.Term also works here.
-	if args.Type == Vote && rf.votedForTerm == rf.getCurrentTerm() && rf.votedFor != NilServerId {
-		if rf.votedFor == args.CandidateId {
+	if args.Type == Vote && rf.getVoteFor() != NilServerId {
+		if rf.getVoteFor() == args.CandidateId {
 			zap.L().Debug("already voted same candidate in same term and grant",
 				zap.Stringer("server", rf.me),
 				zap.Stringer("term", rf.getCurrentTerm()),
@@ -161,8 +161,7 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 			zap.Uint32("traceId", args.TraceId))
 	} else {
 		rf.updateLastContact()
-		rf.votedFor = args.CandidateId
-		rf.votedForTerm = rf.getCurrentTerm()
+		rf.setVoteFor(args.CandidateId)
 		zap.L().Debug("grant",
 			zap.Stringer("server", rf.me),
 			zap.Stringer("term", rf.getCurrentTerm()),
@@ -238,8 +237,7 @@ func (rf *Raft) preElectSelf(ctx context.Context) chan voteResult {
 // call by main goroutine.
 func (rf *Raft) electSelf(ctx context.Context) chan voteResult {
 	rf.setCurrentTerm(rf.getCurrentTerm() + 1) // increment current Term
-	rf.votedFor = rf.me                        // vote for self
-	rf.votedForTerm = rf.getCurrentTerm()
+	rf.setVoteFor(rf.me)                       // vote for self
 	rf.updateLastContact()
 	return rf.sendVote(ctx, Vote, rf.getCurrentTerm())
 }

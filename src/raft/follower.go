@@ -66,6 +66,7 @@ func (rf *Raft) runFollower(ctx context.Context) {
 
 			if v.Term > rf.getCurrentTerm() {
 				rf.setCurrentTerm(v.Term)
+				rf.setVoteFor(NilServerId)
 				rf.setState(Follower)
 				zap.L().Info("get newer term from vote permit response and change to follower",
 					zap.Stringer("server", rf.me),

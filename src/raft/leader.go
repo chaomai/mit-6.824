@@ -308,6 +308,7 @@ func (rf *Raft) runLeader(ctx context.Context) {
 
 			if a.Term > rf.getCurrentTerm() {
 				rf.setCurrentTerm(a.Term)
+				rf.setVoteFor(NilServerId)
 				rf.setState(Follower)
 				zap.L().Info("get newer term from append response and change to follower",
 					zap.Stringer("server", rf.me),
