@@ -11,7 +11,7 @@ import (
 func (rf *Raft) setupFollower() {
 	zap.L().Debug("setup follower",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 }
 
@@ -19,7 +19,7 @@ func (rf *Raft) setupFollower() {
 func (rf *Raft) cleanupFollower() {
 	zap.L().Debug("cleanup follower",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 }
 
@@ -29,7 +29,7 @@ func (rf *Raft) runFollower(ctx context.Context) {
 
 	zap.L().Info("run follower",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 
 	electionTimer := time.NewTimer(getRandomDuration(rf.electionDuration))
@@ -48,13 +48,13 @@ func (rf *Raft) runFollower(ctx context.Context) {
 		case <-ctx.Done():
 			zap.L().Info("follower shutdown",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 			return
 		case v := <-preVoteCh:
 			zap.L().Debug("receive RequestVote reply",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Any("v", v))
 
@@ -64,13 +64,14 @@ func (rf *Raft) runFollower(ctx context.Context) {
 				continue
 			}
 
-			if v.Term > rf.getCurrentTerm() {
-				rf.setCurrentTerm(v.Term)
-				rf.setVoteFor(NilServerId)
+			if v.Term > rf.rs.getCurrentTerm() {
+				rf.rs.setCurrentTerm(v.Term)
+				rf.rs.setVoteFor(NilServerId)
+				rf.persist()
 				rf.setState(Follower)
 				zap.L().Info("get newer term from vote permit response and change to follower",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", v.ServerId),
 					zap.Stringer("remote server term", v.Term))
@@ -81,14 +82,14 @@ func (rf *Raft) runFollower(ctx context.Context) {
 				numPreVotedGranted++
 				zap.L().Info("vote permit granted",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", v.ServerId))
 			} else {
 				numPreVotedDenied++
 				zap.L().Info("vote permit denied",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", v.ServerId))
 			}
@@ -97,7 +98,7 @@ func (rf *Raft) runFollower(ctx context.Context) {
 				rf.setState(Candidate)
 				zap.L().Info("get majority vote permit and change to candidate",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Int("vote permit", numPreVotedGranted))
 				return
@@ -106,7 +107,7 @@ func (rf *Raft) runFollower(ctx context.Context) {
 			if rf.checkMajority(numPreVotedDenied) {
 				zap.L().Info("cannot get majority vote and stay in follower",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Int("vote permit", numPreVotedGranted))
 
@@ -125,7 +126,7 @@ func (rf *Raft) runFollower(ctx context.Context) {
 
 			zap.L().Info("election timeout and start pre vote",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 
 			numPreVotedGranted = 0

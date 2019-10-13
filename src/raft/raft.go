@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"bytes"
 	"context"
 	"log"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"labgob"
 )
 
 import "labrpc"
@@ -148,28 +150,189 @@ type raftState struct {
 	log         []*Entry
 }
 
-func (rf *raftState) setCurrentTerm(t Term) {
-	rf.mutex.Lock()
-	defer rf.mutex.Unlock()
-	rf.currentTerm = t
+func (rs *raftState) setCurrentTerm(t Term) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	rs.currentTerm = t
 }
 
-func (rf *raftState) getCurrentTerm() Term {
-	rf.mutex.Lock()
-	defer rf.mutex.Unlock()
-	return rf.currentTerm
+func (rs *raftState) getCurrentTerm() Term {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	return rs.currentTerm
 }
 
-func (rf *raftState) setVoteFor(s ServerId) {
-	rf.mutex.Lock()
-	defer rf.mutex.Unlock()
-	rf.votedFor = s
+func (rs *raftState) setVoteFor(s ServerId) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	rs.votedFor = s
 }
 
-func (rf *raftState) getVoteFor() ServerId {
-	rf.mutex.Lock()
-	defer rf.mutex.Unlock()
-	return rf.votedFor
+func (rs *raftState) getVoteFor() ServerId {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	return rs.votedFor
+}
+
+func (rs *raftState) setLog(l []*Entry) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	rs.log = l
+}
+
+func (rs *raftState) getLog() []*Entry {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	return rs.log
+}
+
+func (rs *raftState) getNumLog() int {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	return len(rs.log)
+}
+
+func (rs *raftState) appendLog(es ...*Entry) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	rs.log = append(rs.log, es...)
+}
+
+// delete log in [b, e)
+func (rs *raftState) deleteLogRange(b Index, e Index) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+	rs.log = append(rs.log[:b], rs.log[e:]...)
+}
+
+func (rs *raftState) getEntryDataAt(i Index) (t EntryType, data interface{}) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	numLogs := len(rs.log)
+	lastLogIndex := rs.log[numLogs-1].Index
+	if i > lastLogIndex {
+		zap.L().Panic("no such a entry", zap.Stringer("index", i))
+	}
+	return rs.log[i].Type, rs.log[i].Data
+}
+
+func (rs *raftState) getLogInfoAt(i Index) (Index, Term) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	numLogs := len(rs.log)
+	lastLogIndex := rs.log[numLogs-1].Index
+	if i > lastLogIndex {
+		return NilIndex, NilTerm
+	}
+	return rs.log[i].Index, rs.log[i].Term
+}
+
+// get copy of log[b, e)
+func (rs *raftState) getEntries(i ...Index) (r []*Entry) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	var b Index
+	var e Index
+	if len(i) == 1 {
+		b = i[0]
+		e = b + 1
+	} else if len(i) == 2 {
+		b = i[0]
+		e = i[1]
+	} else {
+		zap.L().Panic("only one or two indexes is accepted", zap.Any("i", i))
+	}
+
+	for _, e := range rs.log[b:e] {
+		r = append(r, e)
+	}
+
+	return
+}
+
+func (rs *raftState) getPrevLogInfo(index Index) (Index, Term) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	if index == 0 {
+		zap.L().Panic("the previous log of index 0 doesn't exist")
+	}
+
+	numLogs := len(rs.log)
+	if index > Index(numLogs) {
+		zap.L().Panic("entry doesn't exist",
+			zap.Stringer("index", index),
+			zap.Int("num of log", numLogs))
+	}
+
+	prevLogIndex := rs.log[index-1].Index
+	prevLogTerm := rs.log[index-1].Term
+	return prevLogIndex, prevLogTerm
+}
+
+func (rs *raftState) getFirstLogInfo() (Index, Term) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	firstLogIndex := rs.log[0].Index
+	firstLogTerm := rs.log[0].Term
+	return firstLogIndex, firstLogTerm
+}
+
+func (rs *raftState) getLastLogInfo() (Index, Term) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	numLogs := len(rs.log)
+	lastLogIndex := rs.log[numLogs-1].Index
+	lastLogTerm := rs.log[numLogs-1].Term
+	return lastLogIndex, lastLogTerm
+}
+
+// get the lower bound of term.
+func (rs *raftState) getLowerBoundOfTerm(t Term) (Index, Term) {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	// find lower bound
+	first0 := 0
+	last0 := len(rs.log)
+
+	first := first0
+	last := last0
+
+	for first < last {
+		mid := first + (last-first)/2
+		if rs.log[mid].Term < t {
+			first = mid + 1
+		} else {
+			last = mid
+		}
+	}
+
+	if last == last0 {
+		return NilIndex, NilTerm
+	}
+
+	return rs.log[last].Index, rs.log[last].Term
+}
+
+func (rs *raftState) encode() []byte {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	if e.Encode(rs.currentTerm) != nil ||
+		e.Encode(rs.votedFor) != nil ||
+		e.Encode(rs.log) != nil {
+		zap.L().Panic("encode error", zap.Any("raft state", rs))
+	}
+
+	return w.Bytes()
 }
 
 //
@@ -186,9 +349,7 @@ type Raft struct {
 	// state a Raft server must maintain.
 
 	// Persistent state on all servers
-	currentTerm Term     // latest term server has seen
-	votedFor    ServerId // candidateId that received vote in current term, invalid if currentTerm changed.
-	log         []*Entry
+	rs raftState
 
 	// Volatile state on all servers
 	commitIndex Index
@@ -222,7 +383,7 @@ type Raft struct {
 // believes it is the leader.
 func (rf *Raft) GetState() (term int, isLeader bool) {
 	// Your code here (2A).
-	term = int(rf.getCurrentTerm())
+	term = int(rf.rs.getCurrentTerm())
 	isLeader = rf.isLeader()
 	return
 }
@@ -234,13 +395,8 @@ func (rf *Raft) GetState() (term int, isLeader bool) {
 //
 func (rf *Raft) persist() {
 	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	data := rf.rs.encode()
+	rf.persister.SaveRaftState(data)
 }
 
 //
@@ -250,19 +406,23 @@ func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
+
 	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var currentTerm Term
+	var votedFor ServerId
+	var l []*Entry
+
+	if d.Decode(&currentTerm) != nil ||
+		d.Decode(&votedFor) != nil ||
+		d.Decode(&l) != nil {
+		zap.L().Panic("decode error", zap.Any("buffer", r))
+	}
+
+	rf.rs.setCurrentTerm(currentTerm)
+	rf.rs.setVoteFor(votedFor)
+	rf.rs.setLog(l)
 }
 
 func (rf *Raft) StartFuture(command interface{}) (cf *CommitFuture, ok bool) {
@@ -329,7 +489,7 @@ func (rf *Raft) StartFuture(command interface{}) (cf *CommitFuture, ok bool) {
 //
 // 	zap.L().Debug("start",
 // 		zap.Stringer("server", rf.me),
-// 		zap.Stringer("term", rf.getCurrentTerm()),
+// 		zap.Stringer("term", rf.rs.getCurrentTerm()),
 // 		zap.Stringer("state", rf.getState()),
 // 		zap.Any("entry", entry))
 //
@@ -351,7 +511,7 @@ func (rf *Raft) Start(command interface{}) (index int, term int, ok bool) {
 
 	zap.L().Debug("start",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()),
 		zap.Any("command", command))
 
@@ -359,7 +519,7 @@ func (rf *Raft) Start(command interface{}) (index int, term int, ok bool) {
 	if idx, t, err := cf.Get(); err != nil {
 		zap.L().Error("start future error",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Any("command", command),
 			zap.Error(err))
@@ -367,7 +527,7 @@ func (rf *Raft) Start(command interface{}) (index int, term int, ok bool) {
 	} else {
 		zap.L().Debug("start future finish",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Any("command", command))
 		index = int(idx)
@@ -391,7 +551,7 @@ func (rf *Raft) StartWithCtx(ctx context.Context, command interface{}) (index in
 
 	zap.L().Debug("start",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()),
 		zap.Any("command", command))
 
@@ -399,7 +559,7 @@ func (rf *Raft) StartWithCtx(ctx context.Context, command interface{}) (index in
 	if idx, t, err := cf.GetWithCtx(ctx); err != nil {
 		zap.L().Error("start future error",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Any("command", command),
 			zap.Error(err))
@@ -407,7 +567,7 @@ func (rf *Raft) StartWithCtx(ctx context.Context, command interface{}) (index in
 	} else {
 		zap.L().Debug("start future finish",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Any("command", command))
 		index = int(idx)
@@ -490,37 +650,6 @@ func (rf *Raft) updateLastContact() {
 	rf.lastContact = time.Now()
 }
 
-func (rf *Raft) getLogInfoAt(i Index) (Index, Term) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	numLogs := len(rf.log)
-	lastLogIndex := rf.log[numLogs-1].Index
-	if i > lastLogIndex {
-		return NilIndex, NilTerm
-	}
-	return rf.log[i].Index, rf.log[i].Term
-}
-
-// get log[b, e)
-func (rf *Raft) getEntries(i ...Index) []*Entry {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	var b Index
-	var e Index
-	if len(i) == 1 {
-		b = i[0]
-		e = b + 1
-	} else if len(i) == 2 {
-		b = i[0]
-		e = i[1]
-	} else {
-		zap.L().Panic("only one or two indexes is accepted", zap.Any("i", i))
-	}
-	return rf.log[b:e]
-}
-
 func (rf *Raft) getMatchIndex(s ServerId) Index {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -545,57 +674,6 @@ func (rf *Raft) setNextIndex(s ServerId, new Index) {
 	rf.nextIndex[s] = new
 }
 
-func (rf *Raft) getPrevLogInfo(index Index) (Index, Term) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	if index == 0 {
-		zap.L().Panic("the previous log of index 0 doesn't exist")
-	}
-
-	numLogs := len(rf.log)
-	if index > Index(numLogs) {
-		zap.L().Panic("entry doesn't exist",
-			zap.Stringer("index", index),
-			zap.Int("num of log", numLogs))
-	}
-
-	prevLogIndex := rf.log[index-1].Index
-	prevLogTerm := rf.log[index-1].Term
-	return prevLogIndex, prevLogTerm
-}
-
-func (rf *Raft) getFirstLogInfo() (Index, Term) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	firstLogIndex := rf.log[0].Index
-	firstLogTerm := rf.log[0].Term
-	return firstLogIndex, firstLogTerm
-}
-
-func (rf *Raft) getLastLogInfo() (Index, Term) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	numLogs := len(rf.log)
-	lastLogIndex := rf.log[numLogs-1].Index
-	lastLogTerm := rf.log[numLogs-1].Term
-	return lastLogIndex, lastLogTerm
-}
-
-func (rf *Raft) setCurrentTerm(t Term) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	rf.currentTerm = t
-}
-
-func (rf *Raft) getCurrentTerm() Term {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	return rf.currentTerm
-}
-
 func (rf *Raft) setState(s ServerState) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -606,18 +684,6 @@ func (rf *Raft) getState() ServerState {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	return rf.state
-}
-
-func (rf *Raft) setVoteFor(s ServerId) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	rf.votedFor = s
-}
-
-func (rf *Raft) getVoteFor() ServerId {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	return rf.votedFor
 }
 
 func (rf *Raft) setCommitIndex(i Index) {
@@ -645,7 +711,8 @@ func (rf *Raft) updateCommitIndex(n Index) {
 		return
 	}
 
-	if rf.log[n].Term != rf.currentTerm {
+	_, term := rf.rs.getLogInfoAt(n)
+	if term != rf.rs.getCurrentTerm() {
 		return
 	}
 
@@ -670,46 +737,12 @@ func (rf *Raft) isLeader() bool {
 		return false
 	}
 
-	entry := rf.log[rf.commitIndex]
-	if entry.Term == rf.currentTerm {
+	_, term := rf.rs.getLogInfoAt(rf.commitIndex)
+	if term == rf.rs.getCurrentTerm() {
 		return true
 	}
 
 	return false
-}
-
-// get the lower bound of term.
-func (rf *Raft) getLowerBoundOfTerm(t Term) (Index, Term) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	zap.L().Debug("logs",
-		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.currentTerm),
-		zap.Stringer("state", rf.state),
-		zap.Any("logs", rf.log))
-
-	// find lower bound
-	first0 := 0
-	last0 := len(rf.log)
-
-	first := first0
-	last := last0
-
-	for first < last {
-		mid := first + (last-first)/2
-		if rf.log[mid].Term < t {
-			first = mid + 1
-		} else {
-			last = mid
-		}
-	}
-
-	if last == last0 {
-		return NilIndex, NilTerm
-	}
-
-	return rf.log[last].Index, rf.log[last].Term
 }
 
 // call by main goroutine.
@@ -747,7 +780,7 @@ func (rf *Raft) runApply(ctx context.Context) {
 		case <-ctx.Done():
 			zap.L().Info("background apply stop",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 			return
 		case <-backgroundTicker.C:
@@ -756,7 +789,7 @@ func (rf *Raft) runApply(ctx context.Context) {
 
 		zap.L().Debug("get background apply notify",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Stringer("commit index", rf.getCommitIndex()),
 			zap.Stringer("last applied", rf.lastApplied))
@@ -782,24 +815,22 @@ func (rf *Raft) runApply(ctx context.Context) {
 
 		for commitIndex > rf.lastApplied {
 			rf.lastApplied++
+			entryType, data := rf.rs.getEntryDataAt(rf.lastApplied)
 
-			rf.mu.Lock()
-			entry := rf.log[rf.lastApplied]
-			rf.mu.Unlock()
-
-			if entry.Type == Command {
+			if entryType == Command {
 				applyMsg := ApplyMsg{
 					CommandValid: true,
-					Command:      entry.Data,
+					Command:      data,
 					CommandIndex: int(rf.lastApplied),
 				}
 				rf.applyCh <- applyMsg
 
 				zap.L().Info("background apply",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
-					zap.Any("entry", entry))
+					zap.Any("entry type", entryType),
+					zap.Any("data", data))
 			}
 		}
 	}
@@ -814,7 +845,7 @@ func (rf *Raft) run(ctx context.Context) {
 		case <-ctx.Done():
 			zap.L().Info("shutdown",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 			return
 		default:
@@ -858,13 +889,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	defer func() { _ = logger.Sync() }()
 	zap.ReplaceGlobals(logger)
 
+	rs := raftState{
+		currentTerm: 0,
+		votedFor:    NilServerId,
+		log:         make([]*Entry, 0),
+	}
+
 	rf := &Raft{
 		peers:             peers,
 		persister:         persister,
 		me:                ServerId(me),
-		currentTerm:       0,
-		votedFor:          NilServerId,
-		log:               make([]*Entry, 0),
+		rs:                rs,
 		commitIndex:       0,
 		lastApplied:       0,
 		nextIndex:         nil,
@@ -891,10 +926,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	if len(rf.log) == 0 {
+	if rf.rs.getNumLog() == 0 {
 		entry := makeNoopEntry()
 		entry.Index = 0
-		rf.log = append(rf.log, entry)
+		rf.rs.appendLog(entry)
+		rf.persist()
 	}
 
 	rf.goroutineWg.Add(2)

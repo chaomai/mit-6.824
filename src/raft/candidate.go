@@ -11,7 +11,7 @@ import (
 func (rf *Raft) setupCandidate() {
 	zap.L().Debug("setup candidate",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 }
 
@@ -19,7 +19,7 @@ func (rf *Raft) setupCandidate() {
 func (rf *Raft) cleanupCandidate() {
 	zap.L().Debug("cleanup candidate",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 }
 
@@ -29,7 +29,7 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 
 	zap.L().Info("run candidate",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 
 	electionTimer := time.NewTimer(getRandomDuration(rf.electionDuration))
@@ -48,13 +48,13 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 		case <-ctx.Done():
 			zap.L().Info("candidate shutdown",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 			return
 		case v := <-voteCh:
 			zap.L().Debug("receive RequestVote reply",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Any("v", v))
 
@@ -64,13 +64,14 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 				continue
 			}
 
-			if v.Term > rf.getCurrentTerm() {
-				rf.setCurrentTerm(v.Term)
-				rf.setVoteFor(NilServerId)
+			if v.Term > rf.rs.getCurrentTerm() {
+				rf.rs.setCurrentTerm(v.Term)
+				rf.rs.setVoteFor(NilServerId)
+				rf.persist()
 				rf.setState(Follower)
 				zap.L().Info("get newer term from vote response and change to follower",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", v.ServerId),
 					zap.Stringer("remote server term", v.Term))
@@ -81,14 +82,14 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 				numVotedGranted++
 				zap.L().Info("vote granted",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", v.ServerId))
 			} else {
 				numVotedDenied++
 				zap.L().Info("vote denied",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", v.ServerId))
 			}
@@ -97,7 +98,7 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 				rf.setState(Leader)
 				zap.L().Info("get majority vote and change to leader",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Int("vote", numVotedGranted))
 				return
@@ -107,7 +108,7 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 				rf.setState(Follower)
 				zap.L().Info("cannot get majority vote and change to follower",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Int("vote", numVotedGranted))
 				return
@@ -122,7 +123,7 @@ func (rf *Raft) runCandidate(ctx context.Context) {
 
 			zap.L().Info("election timeout",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 			return
 		}

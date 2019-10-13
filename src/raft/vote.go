@@ -53,7 +53,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	zap.L().Info("receive RequestVote",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()),
 		zap.Any("args", args))
 
@@ -67,7 +67,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 	reply := RequestVoteReply{
 		TraceId:     args.TraceId,
-		Term:        rf.getCurrentTerm(),
+		Term:        rf.rs.getCurrentTerm(),
 		VoteGranted: false,
 		Type:        args.Type,
 	}
@@ -78,41 +78,42 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 	if time.Now().Sub(rf.getLastContact()) < rf.electionDuration {
 		zap.L().Debug("just contact with leader and reject",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 		return
 	}
 
-	if args.Term < rf.getCurrentTerm() {
+	if args.Term < rf.rs.getCurrentTerm() {
 		zap.L().Debug("get older term from vote request and reject",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 		return
 	}
 
 	// only update current term when get actual vote
-	if args.Type == Vote && args.Term > rf.getCurrentTerm() {
-		rf.setCurrentTerm(args.Term)
-		rf.setVoteFor(NilServerId)
+	if args.Type == Vote && args.Term > rf.rs.getCurrentTerm() {
+		rf.rs.setCurrentTerm(args.Term)
+		rf.rs.setVoteFor(NilServerId)
+		rf.persist()
 		rf.setState(Follower)
-		reply.Term = rf.getCurrentTerm()
+		reply.Term = rf.rs.getCurrentTerm()
 
 		zap.L().Info("get newer term from vote request and change to follower",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 	}
 
 	// only check duplicated vote work when get actual vote
-	if args.Type == Vote && rf.getVoteFor() != NilServerId {
-		if rf.getVoteFor() == args.CandidateId {
+	if args.Type == Vote && rf.rs.getVoteFor() != NilServerId {
+		if rf.rs.getVoteFor() == args.CandidateId {
 			zap.L().Debug("already voted same candidate in same term and grant",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Uint32("traceId", args.TraceId))
 			reply.VoteGranted = true
@@ -121,18 +122,18 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 
 		zap.L().Debug("already voted other candidate in same term and reject",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 		return
 	}
 
-	lastLogIndex, lastLogTerm := rf.getLastLogInfo()
+	lastLogIndex, lastLogTerm := rf.rs.getLastLogInfo()
 
 	if args.LastLogTerm < lastLogTerm {
 		zap.L().Debug("candidate has older LastLogTerm and reject",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Stringer("args LastLogTerm", args.LastLogTerm),
 			zap.Stringer("lastLogTerm", lastLogTerm),
@@ -143,7 +144,7 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 	if args.LastLogTerm == lastLogTerm && args.LastLogIndex < lastLogIndex {
 		zap.L().Debug("candidate has lesser index and reject",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Stringer("args LastLogIndex", args.LastLogIndex),
 			zap.Stringer("LastLogIndex", lastLogIndex),
@@ -156,15 +157,15 @@ func (rf *Raft) handleRequestVote(rpc *RPCFuture, args *RequestVoteArgs) {
 	if args.Type == PreVote {
 		zap.L().Debug("permit",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 	} else {
 		rf.updateLastContact()
-		rf.setVoteFor(args.CandidateId)
+		rf.rs.setVoteFor(args.CandidateId)
 		zap.L().Debug("grant",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 	}
@@ -218,7 +219,7 @@ func (rf *Raft) sendRequestVote(server ServerId, args *RequestVoteArgs, reply *R
 	case <-ctx.Done():
 		zap.L().Warn("send RequestVote timeout",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Stringer("remote server", server),
 			zap.Any("args", args))
@@ -229,22 +230,22 @@ func (rf *Raft) sendRequestVote(server ServerId, args *RequestVoteArgs, reply *R
 
 // call by main goroutine.
 func (rf *Raft) preElectSelf(ctx context.Context) chan voteResult {
-	futureTerm := rf.getCurrentTerm() + 1
-	rf.updateLastContact()
+	futureTerm := rf.rs.getCurrentTerm() + 1
 	return rf.sendVote(ctx, PreVote, futureTerm)
 }
 
 // call by main goroutine.
 func (rf *Raft) electSelf(ctx context.Context) chan voteResult {
-	rf.setCurrentTerm(rf.getCurrentTerm() + 1) // increment current Term
-	rf.setVoteFor(rf.me)                       // vote for self
+	rf.rs.setCurrentTerm(rf.rs.getCurrentTerm() + 1) // increment current Term
+	rf.rs.setVoteFor(rf.me)                          // vote for self
+	rf.persist()
 	rf.updateLastContact()
-	return rf.sendVote(ctx, Vote, rf.getCurrentTerm())
+	return rf.sendVote(ctx, Vote, rf.rs.getCurrentTerm())
 }
 
 // when sending pre-vote, the term is future term. when sending vote the term is increased current term.
 func (rf *Raft) sendVote(ctx context.Context, voteType RequestVoteType, term Term) chan voteResult {
-	lastLogIndex, lastLogTerm := rf.getLastLogInfo()
+	lastLogIndex, lastLogTerm := rf.rs.getLastLogInfo()
 
 	args := RequestVoteArgs{
 		TraceId:      rand.Uint32(),
@@ -257,7 +258,7 @@ func (rf *Raft) sendVote(ctx context.Context, voteType RequestVoteType, term Ter
 
 	zap.L().Info("request vote",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()),
 		zap.Any("args", args))
 
@@ -270,7 +271,7 @@ func (rf *Raft) sendVote(ctx context.Context, voteType RequestVoteType, term Ter
 		if serverId == rf.me {
 			reply := RequestVoteReply{
 				TraceId:     args.TraceId,
-				Term:        rf.getCurrentTerm(),
+				Term:        rf.rs.getCurrentTerm(),
 				VoteGranted: true,
 				Type:        voteType,
 			}
@@ -285,7 +286,7 @@ func (rf *Raft) sendVote(ctx context.Context, voteType RequestVoteType, term Ter
 			go func(s ServerId) {
 				zap.L().Debug("send RequestVote",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", s),
 					zap.Any("args", args))
@@ -301,7 +302,7 @@ func (rf *Raft) sendVote(ctx context.Context, voteType RequestVoteType, term Ter
 				} else {
 					zap.L().Warn("send RequestVote failed",
 						zap.Stringer("server", rf.me),
-						zap.Stringer("term", rf.getCurrentTerm()),
+						zap.Stringer("term", rf.rs.getCurrentTerm()),
 						zap.Stringer("state", rf.getState()),
 						zap.Stringer("remote server", s),
 						zap.Any("args", args))

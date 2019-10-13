@@ -19,7 +19,7 @@ type ackInfo struct {
 func (rf *Raft) setupLeader() {
 	zap.L().Debug("setup leader",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 
 	numServers := len(rf.peers)
@@ -33,7 +33,7 @@ func (rf *Raft) setupLeader() {
 	for i := 0; i < numServers; i++ {
 		serverId := ServerId(i)
 
-		lastLogIndex, _ := rf.getLastLogInfo()
+		lastLogIndex, _ := rf.rs.getLastLogInfo()
 		rf.nextIndex[i] = lastLogIndex + 1
 		rf.matchIndex[i] = 0
 		rf.replicateNotifyCh[serverId] = make(chan Notification, 1)
@@ -87,7 +87,7 @@ func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, cu
 		case <-ctx.Done():
 			zap.L().Info("heartbeat stop",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 			return
 		case <-heartbeatTimer.C:
@@ -99,7 +99,7 @@ func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, cu
 
 				zap.L().Info("heartbeat",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", serverId))
 
@@ -113,17 +113,17 @@ func (rf *Raft) runHeartbeat(ctx context.Context, stepDownWg *sync.WaitGroup, cu
 func (rf *Raft) dispatchEntries(entries ...*Entry) {
 	rf.mu.Lock()
 
-	numLogs := len(rf.log)
-	lastLogIndex := rf.log[numLogs-1].Index
+	lastLogIndex, _ := rf.rs.getLastLogInfo()
 
 	for i := range entries {
 		entry := entries[i]
 		if entry.Index == NilIndex {
 			lastLogIndex++
 			entry.Index = lastLogIndex
-			entry.Term = rf.currentTerm
+			entry.Term = rf.rs.getCurrentTerm()
 		}
-		rf.log = append(rf.log, entry)
+		rf.rs.appendLog(entry)
+		rf.persist()
 	}
 
 	rf.mu.Unlock()
@@ -149,14 +149,14 @@ func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s Ser
 		case <-ctx.Done():
 			zap.L().Info("replicate stop",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Stringer("remote server", s))
 			return
 		case n := <-heartbeatNotifyCh:
 			zap.L().Debug("get heartbeat notify",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Uint32("traceId", traceId),
 				zap.Stringer("remote server", s))
@@ -164,7 +164,7 @@ func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s Ser
 		case n := <-replicateNotifyCh:
 			zap.L().Debug("get replicate notify",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Uint32("traceId", traceId),
 				zap.Stringer("remote server", s))
@@ -172,13 +172,13 @@ func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s Ser
 		}
 
 		entries := make([]*Entry, 0)
-		lastLogIndex, _ := rf.getLastLogInfo()
+		lastLogIndex, _ := rf.rs.getLastLogInfo()
 		nextLogIndex := rf.getNextIndex(s)
-		prevLogIndex, prevLogTerm := rf.getPrevLogInfo(nextLogIndex)
+		prevLogIndex, prevLogTerm := rf.rs.getPrevLogInfo(nextLogIndex)
 		var lastAppendLogIndex Index
 
 		if nextLogIndex <= lastLogIndex {
-			es := rf.getEntries(nextLogIndex, lastLogIndex+1)
+			es := rf.rs.getEntries(nextLogIndex, lastLogIndex+1)
 			entries = append(entries, es...)
 			lastAppendLogIndex = lastLogIndex
 		} else {
@@ -214,7 +214,7 @@ func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s Ser
 		} else {
 			zap.L().Debug("send AppendEntries",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Stringer("remote server", s),
 				zap.Any("args", args))
@@ -232,7 +232,7 @@ func (rf *Raft) replicate(ctx context.Context, stepDownWg *sync.WaitGroup, s Ser
 			} else {
 				zap.L().Warn("send AppendEntries failed",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", s),
 					zap.Any("args", args))
@@ -258,7 +258,7 @@ func (rf *Raft) runLeader(ctx context.Context) {
 
 	zap.L().Info("run leader",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 
 	rf.setupLeader()
@@ -266,7 +266,7 @@ func (rf *Raft) runLeader(ctx context.Context) {
 	// send noop
 	zap.L().Debug("send noop",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()))
 	rf.dispatchEntries(makeNoopEntry())
 
@@ -281,13 +281,13 @@ func (rf *Raft) runLeader(ctx context.Context) {
 
 		zap.L().Debug("cleanup leader",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()))
 	}()
 
 	stepDownWg.Add(2)
-	go rf.runHeartbeat(leaderCtx, &stepDownWg, rf.getCurrentTerm())
-	rf.runReplicate(leaderCtx, &stepDownWg, rf.getCurrentTerm())
+	go rf.runHeartbeat(leaderCtx, &stepDownWg, rf.rs.getCurrentTerm())
+	rf.runReplicate(leaderCtx, &stepDownWg, rf.rs.getCurrentTerm())
 
 	for rf.getState() == Leader {
 		select {
@@ -296,23 +296,24 @@ func (rf *Raft) runLeader(ctx context.Context) {
 		case <-ctx.Done():
 			zap.L().Info("leader shutdown",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()))
 			return
 		case a := <-rf.appendResultCh:
 			zap.L().Debug("receive AppendEntries reply",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Any("a", a))
 
-			if a.Term > rf.getCurrentTerm() {
-				rf.setCurrentTerm(a.Term)
-				rf.setVoteFor(NilServerId)
+			if a.Term > rf.rs.getCurrentTerm() {
+				rf.rs.setCurrentTerm(a.Term)
+				rf.rs.setVoteFor(NilServerId)
+				rf.persist()
 				rf.setState(Follower)
 				zap.L().Info("get newer term from append response and change to follower",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", a.ServerId),
 					zap.Stringer("remote server term", a.Term))
@@ -324,7 +325,7 @@ func (rf *Raft) runLeader(ctx context.Context) {
 					rf.setMatchIndex(a.ServerId, a.LastAppendLogIndex)
 					zap.L().Debug("update match index",
 						zap.Stringer("server", rf.me),
-						zap.Stringer("term", rf.getCurrentTerm()),
+						zap.Stringer("term", rf.rs.getCurrentTerm()),
 						zap.Stringer("state", rf.getState()),
 						zap.Stringer("remote server", a.ServerId),
 						zap.Stringer("match index", rf.getMatchIndex(a.ServerId)))
@@ -332,7 +333,7 @@ func (rf *Raft) runLeader(ctx context.Context) {
 					rf.setNextIndex(a.ServerId, a.LastAppendLogIndex+1)
 					zap.L().Debug("update next index",
 						zap.Stringer("server", rf.me),
-						zap.Stringer("term", rf.getCurrentTerm()),
+						zap.Stringer("term", rf.rs.getCurrentTerm()),
 						zap.Stringer("state", rf.getState()),
 						zap.Stringer("remote server", a.ServerId),
 						zap.Stringer("next index", rf.getNextIndex(a.ServerId)))
@@ -340,12 +341,12 @@ func (rf *Raft) runLeader(ctx context.Context) {
 					rf.updateCommitIndex(a.LastAppendLogIndex)
 					zap.L().Debug("update commit index",
 						zap.Stringer("server", rf.me),
-						zap.Stringer("term", rf.getCurrentTerm()),
+						zap.Stringer("term", rf.rs.getCurrentTerm()),
 						zap.Stringer("state", rf.getState()),
 						zap.Stringer("commit index", rf.getCommitIndex()))
 				}
 			} else {
-				firstLogIndex, _ := rf.getFirstLogInfo()
+				firstLogIndex, _ := rf.rs.getFirstLogInfo()
 				if a.ConflictTermFirstIndex < firstLogIndex {
 					// no such a entry currently available, send snapshot
 				} else {
@@ -354,7 +355,7 @@ func (rf *Raft) runLeader(ctx context.Context) {
 
 				zap.L().Debug("decrease next index",
 					zap.Stringer("server", rf.me),
-					zap.Stringer("term", rf.getCurrentTerm()),
+					zap.Stringer("term", rf.rs.getCurrentTerm()),
 					zap.Stringer("state", rf.getState()),
 					zap.Stringer("remote server", a.ServerId),
 					zap.Stringer("next index", rf.getNextIndex(a.ServerId)))

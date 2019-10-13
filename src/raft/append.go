@@ -33,7 +33,7 @@ type appendResult struct {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	zap.L().Info("receive AppendEntries",
 		zap.Stringer("server", rf.me),
-		zap.Stringer("term", rf.getCurrentTerm()),
+		zap.Stringer("term", rf.rs.getCurrentTerm()),
 		zap.Stringer("state", rf.getState()),
 		zap.Any("args", args))
 
@@ -47,94 +47,105 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 func (rf *Raft) handleAppendEntries(rpc *RPCFuture, args *AppendEntriesArgs) {
 	reply := AppendEntriesReply{
 		TraceId: args.TraceId,
-		Term:    rf.getCurrentTerm(),
+		Term:    rf.rs.getCurrentTerm(),
 		Success: false,
 	}
 
 	defer func() { rpc.Respond(reply, nil) }()
 
-	if args.Term < rf.getCurrentTerm() {
+	if args.Term < rf.rs.getCurrentTerm() {
 		zap.L().Debug("get older term from append entries and ignore",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 		return
 	}
 
-	if args.Term > rf.getCurrentTerm() {
-		rf.setCurrentTerm(args.Term)
-		rf.setVoteFor(NilServerId)
+	if args.Term > rf.rs.getCurrentTerm() {
+		rf.rs.setCurrentTerm(args.Term)
+		rf.rs.setVoteFor(NilServerId)
+		rf.persist()
 		rf.setState(Follower)
-		reply.Term = rf.getCurrentTerm()
+		reply.Term = rf.rs.getCurrentTerm()
 
 		zap.L().Info("get newer term from append entries and change to follower",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Uint32("traceId", args.TraceId))
 	}
 
 	// check prev
 	if args.PrevLogIndex > 0 {
-		index, term := rf.getLogInfoAt(args.PrevLogIndex)
+		index, term := rf.rs.getLogInfoAt(args.PrevLogIndex)
 
 		if index <= 0 {
 			// no such a prev entry
-			lastLogIndex, _ := rf.getLastLogInfo()
+			lastLogIndex, _ := rf.rs.getLastLogInfo()
 			reply.ConflictTermFirstIndex = lastLogIndex + 1
 
 			zap.L().Debug("no such a prev log index and ignore",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Uint32("traceId", args.TraceId))
 			return
 		} else if term != args.PrevLogTerm {
 			// include the term of the conflicting entry and the first index it stores for that term.
-			firstIndex, _ := rf.getLowerBoundOfTerm(term)
+			firstIndex, _ := rf.rs.getLowerBoundOfTerm(term)
 			reply.ConflictTermFirstIndex = firstIndex
 
 			zap.L().Debug("prev log term is different and ignore",
 				zap.Stringer("server", rf.me),
-				zap.Stringer("term", rf.getCurrentTerm()),
+				zap.Stringer("term", rf.rs.getCurrentTerm()),
 				zap.Stringer("state", rf.getState()),
 				zap.Uint32("traceId", args.TraceId))
 			return
 		}
 	}
 
-	// skip until conflict entry
+	// If an existing entry conflicts with a new one (same index but different terms),
+	// delete the existing entry and all that follow it.
+	//
+	// skip same entry, delete entries after the conflict
 	numEntries := len(args.Entries)
 	if numEntries > 0 {
-		skipUntil := 0
-		for i := range args.Entries {
-			skipUntil = i
-			_, term := rf.getLogInfoAt(args.Entries[i].Index)
-			if term != args.Entries[i].Term {
+		lastLogIndex, _ := rf.rs.getLastLogInfo()
+		skipUntil := 0 // the first conflict
+		for skipUntil < numEntries {
+			if args.Entries[skipUntil].Index > lastLogIndex {
 				break
 			}
+
+			_, term := rf.rs.getLogInfoAt(args.Entries[skipUntil].Index)
+			if term != args.Entries[skipUntil].Term {
+				rf.rs.deleteLogRange(args.Entries[skipUntil].Index, lastLogIndex+1)
+				rf.persist()
+				break
+			}
+
+			skipUntil++
 		}
 
-		rf.mu.Lock()
-		rf.log = append(rf.log[:args.Entries[skipUntil].Index], args.Entries[skipUntil:]...)
-		rf.mu.Unlock()
+		rf.rs.appendLog(args.Entries[skipUntil:]...)
+		rf.persist()
 
 		zap.L().Debug("append log",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
-			zap.Any("log", rf.log))
+			zap.Any("log", rf.rs.getLog()))
 	}
 
 	if args.LeaderCommit > rf.getCommitIndex() {
-		lastLogIndex, _ := rf.getLastLogInfo()
+		lastLogIndex, _ := rf.rs.getLastLogInfo()
 		commitIndex := min(args.LeaderCommit, lastLogIndex)
 		rf.setCommitIndex(commitIndex)
 
 		zap.L().Debug("update commit index",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Stringer("commit index", commitIndex))
 
@@ -164,7 +175,7 @@ func (rf *Raft) sendAppendEntries(server ServerId, args *AppendEntriesArgs, repl
 	case <-ctx.Done():
 		zap.L().Warn("send AppendEntries timeout",
 			zap.Stringer("server", rf.me),
-			zap.Stringer("term", rf.getCurrentTerm()),
+			zap.Stringer("term", rf.rs.getCurrentTerm()),
 			zap.Stringer("state", rf.getState()),
 			zap.Stringer("remote server", server),
 			zap.Any("args", args))
